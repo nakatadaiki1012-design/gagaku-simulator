@@ -646,69 +646,185 @@ function initThree(){
   mesh(new THREE.BoxGeometry(11.2,.1,.1),shu,0,.02,3.62).castShadow=false;
   mesh(new THREE.BoxGeometry(11.2,.6,.12),M(0x3a2a20),0,.3,-2.8);
 
-  const skin=M(0xe9d3bb,{roughness:.9}), hat=M(0x15151a,{roughness:.4}), hakama=M(0x6f6a52), wood=M(0x7a4f2c,{roughness:.55}), lac=M(0x1d1716,{roughness:.35});
-  const gold=M(0xc9a24a,{metalness:.7,roughness:.3});
-  const ROBE=0x4f6b4e; // 直垂（玉虫色に近い深緑）
+  // ---- 質感（布・漆・木目）はキャンバスで描いた小さな模様を貼る ----
+  function canvasTex(w,h,draw,rep){ const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d'),w,h);
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; if(rep) t.repeat.set(rep[0],rep[1]); t.anisotropy=4; return t; }
+  const rnd=(()=>{ let s=7; return ()=>(s=(s*16807)%2147483647)/2147483647; })();
+  // 精好織の細かな織り目（玉虫色の直垂）
+  const weave=canvasTex(128,128,(x,w,h)=>{ x.fillStyle='#d8d8d8'; x.fillRect(0,0,w,h);
+    for(let i=0;i<h;i+=2){ x.fillStyle=`rgba(255,255,255,${.10+rnd()*.12})`; x.fillRect(0,i,w,1); }
+    for(let i=0;i<w;i+=3){ x.fillStyle=`rgba(0,0,0,${.05+rnd()*.07})`; x.fillRect(i,0,1,h); } },[3,3]);
+  // 揉立烏帽子のしわ
+  const crease=canvasTex(128,128,(x,w,h)=>{ x.fillStyle='#808080'; x.fillRect(0,0,w,h);
+    for(let i=0;i<90;i++){ const cx=rnd()*w, cy=rnd()*h, l=10+rnd()*30, a=(rnd()-.5)*1.6; x.strokeStyle=rnd()<.5?'rgba(255,255,255,.5)':'rgba(0,0,0,.5)'; x.lineWidth=1+rnd()*2;
+      x.beginPath(); x.moveTo(cx-Math.cos(a)*l,cy-Math.sin(a)*l); x.quadraticCurveTo(cx+(rnd()-.5)*12,cy+(rnd()-.5)*12,cx+Math.cos(a)*l,cy+Math.sin(a)*l); x.stroke(); } },[2,1]);
+  // 檜の板張り
+  const boards=canvasTex(1024,512,(x,w,h)=>{ const n=11, pw=w/n;
+    for(let i=0;i<n;i++){ const L=46+rnd()*14; x.fillStyle=`hsl(30,24%,${L}%)`; x.fillRect(i*pw,0,pw,h);
+      for(let k=0;k<26;k++){ x.strokeStyle=`rgba(90,55,30,${.08+rnd()*.14})`; x.lineWidth=.6+rnd()*1.6; const gx=i*pw+rnd()*pw;
+        x.beginPath(); x.moveTo(gx,0); x.bezierCurveTo(gx+(rnd()-.5)*18,h*.35,gx+(rnd()-.5)*18,h*.65,gx+(rnd()-.5)*10,h); x.stroke(); }
+      x.fillStyle='rgba(40,22,10,.55)'; x.fillRect(i*pw,0,2,h); } });
+  boards.encoding=THREE.sRGBEncoding;
+  floor.material=new THREE.MeshStandardMaterial({map:boards,roughness:.6,color:new THREE.Color(0xb39a84).convertSRGBToLinear()});
+  planks.visible=false;
 
-  function limb(parent,mat,r){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r*1.25,1,8),mat); m.castShadow=true; parent.add(m); return m; }
-  function setLimb(m,a,b){ const d=new THREE.Vector3().subVectors(b,a), L=d.length(); m.position.copy(a).addScaledVector(d,.5); m.scale.set(1,L,1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()); }
+  const skin=M(0xe2c8ae,{roughness:.85}), hair=M(0x121214,{roughness:.6}), dark=M(0x2a2420,{roughness:.6});
+  const eboshiM=new THREE.MeshStandardMaterial({color:0x0b0b0d,roughness:.42,bumpMap:crease,bumpScale:.005});
+  const white=M(0xf3efe4,{roughness:.9}), wood=M(0x7a4f2c,{roughness:.5}), lac=M(0x1d1716,{roughness:.3}), lacRed=M(0x8e2a1c,{roughness:.35});
+  const gold=M(0xc9a24a,{metalness:.75,roughness:.3}), silver=M(0xc8c8c4,{metalness:.8,roughness:.3}), bamboo=M(0xc9b27a,{roughness:.55});
+  const kaba=M(0x3b2416,{roughness:.5}); // 樺巻（桜の皮を巻いた帯）
+  const ROBE=0x6a6a3c; // 海松色（みるいろ）の直垂。茶と緑で織った玉虫色
 
+  const V=(x,y,z)=>new THREE.Vector3(x,y,z);
+  function limb(parent,mat,r,r2){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r2||r,1,10),mat); m.castShadow=true; parent.add(m); return m; }
+  function setLimb(m,a,b){ const d=new THREE.Vector3().subVectors(b,a), L=Math.max(1e-4,d.length()); m.position.copy(a).addScaledVector(d,.5); m.scale.set(1,L,1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.multiplyScalar(1/L)); }
+  // 肘の位置（二関節の腕）
+  const UA=.29, FA=.27, _d=new THREE.Vector3(), _p=new THREE.Vector3();
+  function elbow(out,s,h,side){ _d.subVectors(h,s); let L=_d.length(); const Lc=Math.min(L,UA+FA-.002); _d.normalize();
+    const a=(UA*UA-FA*FA+Lc*Lc)/(2*Lc), hgt=Math.sqrt(Math.max(0,UA*UA-a*a));
+    _p.set(side*.55,-1,-.25); _p.addScaledVector(_d,-_p.dot(_d)).normalize();
+    return out.copy(s).addScaledVector(_d,a).addScaledVector(_p,hgt); }
+  // 直垂の大きな袖：腕から下に垂れる布
+  const _u=new THREE.Vector3(), _up=new THREE.Vector3(), _n=new THREE.Vector3(), _m=new THREE.Matrix4();
+  function setSleeve(m,a,b){ _u.subVectors(b,a); const L=Math.max(.05,_u.length()); _u.normalize();
+    _up.set(0,1,0).addScaledVector(_u,-_u.y); if(_up.lengthSq()<.02) _up.set(0,0,1).addScaledVector(_u,-_u.z); _up.normalize(); _n.crossVectors(_u,_up);
+    _m.makeBasis(_u,_up,_n); m.quaternion.setFromRotationMatrix(_m); m.scale.set(L,1,1);
+    m.position.copy(a).addScaledVector(_u,L*.5).addScaledVector(_up,-.15); }
+
+  // 奏者の向き：+z（客席）を向く。奏者の右手は −x、左手は +x。
+  const MOUTH=V(0,.905,.1);
   function figure(id,p,x,z){
     const g=new THREE.Group(); g.position.set(x,0,z); scene.add(g);
-    const robe=M(ROBE,{roughness:.75,emissive:0x000000});
+    const robe=new THREE.MeshStandardMaterial({color:new THREE.Color(ROBE).convertSRGBToLinear(),map:weave,roughness:.55,metalness:.14,emissive:0x000000});
     const body=new THREE.Group(); g.add(body);
-    mesh(new THREE.CylinderGeometry(.36,.46,.3,20),hakama,0,.15,0,body);
-    const torso=mesh(new THREE.CylinderGeometry(.17,.34,.62,16),robe,0,.6,0,body);
-    mesh(new THREE.SphereGeometry(.17,16,10),robe,0,.88,0,body).scale.set(1.25,.5,.95);
-    const head=mesh(new THREE.SphereGeometry(.125,18,14),skin,0,1.08,.01,body);
-    const eb=mesh(new THREE.CylinderGeometry(.075,.11,.3,14),hat,0,1.3,-.03,body); eb.rotation.x=-.18;
-    mesh(new THREE.CylinderGeometry(.13,.13,.02,16),hat,0,1.16,-.01,body);
-    const sh={L:new THREE.Vector3(-.22,.86,0),R:new THREE.Vector3(.22,.86,0)};
-    const arm={L:limb(body,robe,.075),R:limb(body,robe,.075)};
-    const hand={L:mesh(new THREE.SphereGeometry(.042,10,8),skin,0,0,0,body),R:mesh(new THREE.SphereGeometry(.042,10,8),skin,0,0,0,body)};
-    const rest={L:new THREE.Vector3(-.2,.55,.2),R:new THREE.Vector3(.2,.55,.2)};
+    // 楽座（あぐら）：長袴が床に広がる
+    mesh(new THREE.SphereGeometry(1,24,12),robe,0,.07,.06,body).scale.set(.38,.09,.29);
+    [1,-1].forEach(s=>{ mesh(new THREE.SphereGeometry(.11,14,10),robe,s*.27,.11,.17,body).scale.set(1.15,.75,1.1);
+      const th=limb(body,robe,.095,.11); setLimb(th,V(s*.1,.15,.02),V(s*.27,.11,.17));
+      const sn=limb(body,robe,.075); setLimb(sn,V(s*.27,.09,.2),V(-s*.08,.07,.27)); });
+    mesh(new THREE.SphereGeometry(1,20,10),robe,0,.1,-.12,body).scale.set(.3,.11,.2);
+    // 胴（直垂は肩の張った箱形）
+    const torso=mesh(new THREE.CylinderGeometry(.2,.24,.6,18),robe,0,.47,-.01,body); torso.scale.z=.8;
+    mesh(new THREE.SphereGeometry(1,20,10),robe,0,.76,-.01,body).scale.set(.27,.07,.17);
+    // 白い小袖の襟（Vの字）と胸紐・菊綴
+    [1,-1].forEach(s=>{ const c=mesh(new THREE.BoxGeometry(.035,.25,.012),white,s*.045,.69,.135,body); c.rotation.z=s*.42; c.rotation.x=-.18;
+      const k=mesh(new THREE.SphereGeometry(.018,8,6),white,s*.085,.56,.155,body); k.scale.set(1,1.4,1); });
+    mesh(new THREE.CylinderGeometry(.05,.055,.07,12),white,0,.79,0,body);
+    // 首と顔
+    mesh(new THREE.CylinderGeometry(.042,.046,.08,10),skin,0,.83,0,body);
+    const head=mesh(new THREE.SphereGeometry(.108,22,16),skin,0,.935,.005,body); head.scale.set(.92,1.08,1);
+    mesh(new THREE.SphereGeometry(.11,18,12,Math.PI,Math.PI,0,Math.PI*.62),hair,0,.94,0,body).scale.set(.94,1.08,1);
+    [1,-1].forEach(s=>{ mesh(new THREE.SphereGeometry(.022,8,6),skin,s*.094,.93,-.005,body).scale.set(.5,1,.8);
+      mesh(new THREE.SphereGeometry(.011,8,6),dark,s*.034,.945,.093,body).scale.set(1.3,.55,.5);
+      const br=mesh(new THREE.BoxGeometry(.03,.005,.006),dark,s*.035,.968,.094,body); br.rotation.z=s*.12; });
+    mesh(new THREE.SphereGeometry(.012,8,6),skin,0,.92,.103,body).scale.set(1,1.3,1);
+    // 揉立烏帽子：高く立ち、上が少し前へ折れる
+    mesh(new THREE.CylinderGeometry(.092,.1,.06,20),eboshiM,0,1.005,-.005,body);
+    const eb=mesh(new THREE.CylinderGeometry(.06,.09,.26,20,4),eboshiM,0,1.15,-.025,body); eb.rotation.x=-.12; eb.scale.z=.8;
+    const tip=mesh(new THREE.SphereGeometry(.062,16,10),eboshiM,0,1.27,-.04,body); tip.scale.set(1,.6,.85); tip.rotation.x=.35;
+    mesh(new THREE.BoxGeometry(.09,.035,.04),eboshiM,0,1.265,.012,body).rotation.x=.5;
+    mesh(new THREE.TorusGeometry(.099,.004,6,24),white,0,.985,-.005,body).rotation.x=Math.PI/2; // 掛緒
+
+    const sh={L:V(.21,.74,0),R:V(-.21,.74,0)};
+    const up={L:limb(g,robe,.07,.075),R:limb(g,robe,.07,.075)}, fo={L:limb(g,robe,.06,.068),R:limb(g,robe,.06,.068)};
+    const sleeveGeo=new THREE.BoxGeometry(1,.3,.05);
+    const sleeve={L:mesh(sleeveGeo,robe,0,0,0,g),R:mesh(sleeveGeo,robe,0,0,0,g)};
+    const hand={L:mesh(new THREE.SphereGeometry(.032,10,8),skin,0,0,0,g),R:mesh(new THREE.SphereGeometry(.032,10,8),skin,0,0,0,g)};
+    hand.L.scale.set(1,.8,1.25); hand.R.scale.set(1,.8,1.25);
+    const knee={L:V(.24,.25,.2),R:V(-.24,.25,.2)};
     const it=new THREE.Group(); g.add(it);
-    let extra={};
-    // 楽器
-    if(id==='sho'){ const cup=mesh(new THREE.CylinderGeometry(.06,.05,.07,14),lac,0,.99,.2,it);
-      for(let i=0;i<17;i++){ const a=i/17*Math.PI*2, h=.16+((i*7)%17)/17*.26; mesh(new THREE.CylinderGeometry(.008,.008,h,5),M(0xd9c79a),Math.cos(a)*.05,1.03+h/2,.2+Math.sin(a)*.05,it); }
-      rest.L.set(-.06,.98,.17); rest.R.set(.06,.98,.17); }
-    else if(id==='hichiriki'){ const t=mesh(new THREE.CylinderGeometry(.017,.022,.19,8),M(0x5a3a22),0,.98,.2,it); t.rotation.x=.75; rest.L.set(-.02,1.0,.16); rest.R.set(.02,.93,.23); }
-    else if(id==='ryuteki'){ const t=mesh(new THREE.CylinderGeometry(.016,.016,.44,8),M(0x2b1d17),.16,1.05,.15,it); t.rotation.z=Math.PI/2+.12; mesh(new THREE.CylinderGeometry(.018,.018,.03,8),shu,-.04,1.03,.15,it).rotation.z=Math.PI/2;
-      rest.L.set(.08,1.03,.17); rest.R.set(.28,1.07,.17); }
-    else if(id==='biwa'){ const bw=new THREE.Group(); bw.position.set(-.02,.62,.24); bw.rotation.z=.75; it.add(bw);
-      mesh(new THREE.SphereGeometry(.2,20,14),wood,0,0,0,bw).scale.set(1,1.45,.32);
-      mesh(new THREE.BoxGeometry(.07,.45,.05),wood,0,.45,.02,bw); const hd=mesh(new THREE.BoxGeometry(.08,.14,.05),wood,0,.72,-.03,bw); hd.rotation.x=-.9;
-      mesh(new THREE.BoxGeometry(.2,.05,.04),M(0x2a1b12),0,-.12,.07,bw);
-      rest.L.set(-.42,.98,.24); rest.R.set(.1,.55,.32); extra.pick=new THREE.Vector3(.1,.55,.32); }
-    else if(id==='koto'){ const k=mesh(new THREE.BoxGeometry(1.45,.07,.26),wood,0,.1,.5,it); k.rotation.y=.12;
-      for(let i=0;i<13;i++){ const s=mesh(new THREE.BoxGeometry(.02,.05,.24),M(0xefe8d6),-.5+i*.07+(i%3)*.05,.165,.5,it); s.rotation.y=.12; }
-      mesh(new THREE.BoxGeometry(1.45,.006,.012),M(0xefe8d6),0,.2,.42,it);
-      rest.L.set(-.25,.26,.42); rest.R.set(.32,.26,.44); extra.pick=new THREE.Vector3(.32,.26,.44); }
-    else if(id==='kakko'){ const st=new THREE.Group(); st.position.set(0,.34,.45); it.add(st);
-      const dr=mesh(new THREE.CylinderGeometry(.12,.12,.34,18),M(0x7d2d1f,{roughness:.5}),0,0,0,st); dr.rotation.z=Math.PI/2;
-      [-.18,.18].forEach(x=>{ const h=mesh(new THREE.CylinderGeometry(.16,.16,.02,20),M(0xe8e1cf),x,0,0,st); h.rotation.z=Math.PI/2; });
-      [[-.1,-.2],[.1,-.2]].forEach(([x])=>{ mesh(new THREE.BoxGeometry(.03,.34,.03),lac,x,-.18,-.08,st); mesh(new THREE.BoxGeometry(.03,.34,.03),lac,x,-.18,.08,st); });
-      rest.L.set(-.24,.44,.42); rest.R.set(.24,.44,.42); extra.L=new THREE.Vector3(-.2,.36,.45); extra.R=new THREE.Vector3(.2,.36,.45); }
-    else if(id==='taiko'){ const fr=new THREE.Group(); fr.position.set(0,1.05,.75); it.add(fr);
-      mesh(new THREE.TorusGeometry(.66,.05,10,40),shu,0,0,0,fr);
-      for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; const f=mesh(new THREE.ConeGeometry(.07,.2,6),gold,Math.cos(a)*.76,Math.sin(a)*.76,0,fr); f.rotation.z=a-Math.PI/2; }
-      const dr=mesh(new THREE.CylinderGeometry(.48,.48,.24,32),M(0x8a2f22,{roughness:.5}),0,0,0,fr); dr.rotation.x=Math.PI/2;
-      const face=mesh(new THREE.CircleGeometry(.44,40),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7,emissive:0x000000}),0,0,-.125,fr); face.rotation.y=Math.PI;
-      const face2=mesh(new THREE.CircleGeometry(.44,40),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7}),0,0,.125,fr);
-      mesh(new THREE.BoxGeometry(.08,1.1,.08),lac,0,-.75,0,fr).position.y=-.6; mesh(new THREE.BoxGeometry(.9,.08,.4),lac,0,-1.0,0,fr);
-      rest.L.set(-.2,.85,.4); rest.R.set(.2,.85,.4); extra.hitR=new THREE.Vector3(.12,1.05,.58); extra.hitL=new THREE.Vector3(-.14,.95,.58); extra.face=face;
-      // 太鼓の奏者は太鼓の前に立つ高さに合わせて少し高く
-      body.position.y=.05; }
-    else if(id==='shoko'){ const fr=new THREE.Group(); fr.position.set(0,.4,.45); it.add(fr);
-      [-.2,.2].forEach(x=>mesh(new THREE.BoxGeometry(.04,.62,.04),lac,x,0,0,fr)); mesh(new THREE.BoxGeometry(.5,.04,.04),lac,0,.31,0,fr);
-      const d=mesh(new THREE.CylinderGeometry(.13,.13,.035,24),gold,0,.03,0,fr); d.rotation.x=Math.PI/2;
-      rest.L.set(-.12,.48,.36); rest.R.set(.12,.48,.36); extra.hit=new THREE.Vector3(0,.43,.4); extra.dish=d; }
+    const P={id,p,g,body,robe,it,sh,up,fo,sleeve,hand,knee,hold:{L:knee.L.clone(),R:knee.R.clone()},hands:{L:knee.L.clone(),R:knee.R.clone()},
+      el:{L:V(0,0,0),R:V(0,0,0)},sticks:[],low:null,lift:1,lv:0,bob:Math.random()*6};
+    const stick=(side,len,r,mat,knob)=>{ const s=limb(g,mat,r,r*1.2); let k=null; if(knob){ k=mesh(new THREE.SphereGeometry(r*2.2,10,8),mat,0,0,0,g); }
+      P.sticks.push({side,m:s,k,len,aim:null}); return P.sticks[P.sticks.length-1]; };
+    const tube=(a,b,r,mat,r2)=>{ const t=limb(it,mat,r,r2); setLimb(t,a,b); return t; };
+
+    if(id==='sho'){ // 笙：お椀（頭）を両手で包み、17本の竹を顔の前に立てる
+      const c=V(0,.855,.17);
+      const bowl=mesh(new THREE.CylinderGeometry(.062,.05,.07,20),lac,c.x,c.y,c.z,it);
+      mesh(new THREE.TorusGeometry(.061,.004,6,24),gold,c.x,c.y+.035,c.z,it).rotation.x=Math.PI/2;
+      tube(V(0,.86,.11),V(0,.865,.135),.012,lac);
+      for(let i=0;i<17;i++){ const a=-Math.PI*.9+i/16*Math.PI*1.8; // 正面に切れ目のある輪
+        const h=.2+.24*Math.pow(Math.abs(Math.sin(a/2+Math.PI/2*0)),.9)*(i%2?1:.86);
+        const px=c.x-Math.sin(a)*.046, pz=c.z-Math.cos(a)*.046; tube(V(px,c.y+.03,pz),V(px,c.y+.03+h,pz),.0075,bamboo); }
+      const band=mesh(new THREE.TorusGeometry(.05,.004,6,24),silver,c.x,c.y+.14,c.z,it); band.rotation.x=Math.PI/2;
+      P.hold.L.set(.06,.84,.16); P.hold.R.set(-.06,.84,.16);
+      P.low={pos:V(0,-.37,.06),rot:new THREE.Euler(0,0,0)}; }
+    else if(id==='hichiriki'){ // 篳篥：口から斜め下へ
+      const a=V(0,.895,.115), d=V(0,-.62,.78).normalize(), b=a.clone().addScaledVector(d,.21);
+      tube(a.clone().addScaledVector(d,.02),b,.016,lac,.021);
+      for(let i=1;i<8;i++){ const q=a.clone().addScaledVector(d,.02+i*.024); tube(q,q.clone().addScaledVector(d,.006),.0215,kaba); }
+      tube(a.clone().addScaledVector(d,-.015),a.clone().addScaledVector(d,.025),.006,M(0xb59a6a)); // 蘆舌
+      P.hold.L.copy(a).addScaledVector(d,.08).add(V(0,0,.02)); P.hold.R.copy(a).addScaledVector(d,.17).add(V(0,0,.02));
+      P.low={pos:V(0,-.33,.06),rot:new THREE.Euler(-.5,0,0)}; }
+    else if(id==='ryuteki'){ // 龍笛：奏者の右側へ横に構える
+      const a=V(.07,.895,.12), b=V(-.38,.85,.17);
+      tube(a,b,.0155,lac);
+      const d=b.clone().sub(a).normalize();
+      for(let i=0;i<9;i++){ const q=a.clone().addScaledVector(d,.03+i*.048); tube(q,q.clone().addScaledVector(d,.008),.0165,kaba); }
+      tube(a.clone().addScaledVector(d,-.002),a.clone().addScaledVector(d,.02),.0165,lacRed);
+      P.hold.L.copy(a).addScaledVector(d,.17).add(V(0,-.01,.02)); P.hold.R.copy(a).addScaledVector(d,.34).add(V(0,-.01,.02));
+      P.low={pos:V(.05,-.36,.06),rot:new THREE.Euler(0,0,-.15)}; }
+    else if(id==='biwa'){ // 楽琵琶：膝の上で横に寝かせ、首は左へ。右手に撥
+      const bw=new THREE.Group(); bw.position.set(-.1,.5,.27); bw.rotation.set(-.28,0,-1.2); it.add(bw);
+      mesh(new THREE.SphereGeometry(.22,24,16),wood,0,0,-.01,bw).scale.set(1,1.4,.3);
+      mesh(new THREE.CylinderGeometry(.2,.2,.006,24),M(0x9a6a3c,{roughness:.6}),0,0,.055,bw).rotation.x=Math.PI/2;
+      mesh(new THREE.BoxGeometry(.21,.06,.02),dark,0,.06,.07,bw);                       // 撥面
+      mesh(new THREE.BoxGeometry(.16,.025,.03),dark,0,-.2,.065,bw);                     // 覆手
+      mesh(new THREE.BoxGeometry(.075,.42,.05),wood,0,.48,.02,bw);
+      for(let i=0;i<4;i++) mesh(new THREE.BoxGeometry(.06,.012,.02),M(0xd9c79a),0,.33+i*.06,.05,bw); // 柱
+      const hd=mesh(new THREE.BoxGeometry(.08,.17,.05),wood,0,.74,-.03,bw); hd.rotation.x=-1.0;
+      for(let i=0;i<4;i++){ const pg=mesh(new THREE.CylinderGeometry(.008,.008,.12,6),dark,0,.73+(i%2)*.04,-.03,bw); pg.rotation.z=Math.PI/2; }
+      for(let i=0;i<4;i++) mesh(new THREE.BoxGeometry(.0025,.9,.0025),M(0xf1ead6),-.03+i*.02,.27,.07,bw);
+      bw.updateMatrix();
+      P.hold.R.copy(V(.02,.0,.11).applyMatrix4(bw.matrix)); P.hold.L.copy(V(-.02,.6,.06).applyMatrix4(bw.matrix));
+      const b2=stick('R',.1,.012,dark); b2.flat=true; b2.aim=V(0,.08,.07).applyMatrix4(bw.matrix); P.pick=P.hold.R.clone(); }
+    else if(id==='koto'){ // 楽箏：右端（竜角側）に座り、楽器は左へのびる
+      const k=new THREE.Group(); k.position.set(.5,.09,.44); k.rotation.y=.06; it.add(k);
+      const bd=mesh(new THREE.CylinderGeometry(.16,.16,1.45,24,1,false,-Math.PI*.42,Math.PI*.84),wood,0,0,0,k); bd.rotation.z=Math.PI/2; bd.scale.z=.85; bd.position.y=-.06;
+      mesh(new THREE.BoxGeometry(1.45,.03,.26),wood,0,-.02,0,k);
+      mesh(new THREE.BoxGeometry(.04,.03,.24),M(0xefe8d6),-.66,.11,0,k); mesh(new THREE.BoxGeometry(.04,.03,.24),M(0xefe8d6),.66,.11,0,k);
+      for(let i=0;i<13;i++){ const zz=-.1+i*.0167; mesh(new THREE.BoxGeometry(1.36,.0025,.0025),M(0xf1ead6),0,.125,zz,k);
+        mesh(new THREE.BoxGeometry(.016,.035,.014),M(0xefe8d6),-.18+((i*5)%13)*.055,.11,zz,k); }
+      mesh(new THREE.BoxGeometry(.08,.02,.28),lacRed,-.73,.08,0,k);
+      k.updateMatrix();
+      P.hold.R.copy(V(-.48,.16,.02).applyMatrix4(k.matrix)); P.hold.L.copy(V(.05,.16,.0).applyMatrix4(k.matrix)); P.pick=P.hold.R.clone(); }
+    else if(id==='kakko'){ // 鞨鼓：台にのせ、両面を細い撥で打つ
+      const st=new THREE.Group(); st.position.set(0,.33,.46); it.add(st);
+      const dr=mesh(new THREE.CylinderGeometry(.1,.1,.3,20),lacRed,0,0,0,st); dr.rotation.z=Math.PI/2;
+      [-.16,.16].forEach(x=>{ const h=mesh(new THREE.CylinderGeometry(.15,.15,.02,24),M(0xe8e1cf),x,0,0,st); h.rotation.z=Math.PI/2;
+        const r=mesh(new THREE.TorusGeometry(.15,.008,6,24),lac,x,0,0,st); r.rotation.y=Math.PI/2; });
+      for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; const c=limb(st,M(0xb04a2a),.004); setLimb(c,V(-.16,Math.cos(a)*.13,Math.sin(a)*.13),V(.16,Math.cos(a+.6)*.13,Math.sin(a+.6)*.13)); }
+      mesh(new THREE.BoxGeometry(.36,.04,.24),lac,0,-.14,0,st);
+      [-.15,.15].forEach(x=>[-.09,.09].forEach(zz=>mesh(new THREE.BoxGeometry(.03,.2,.03),lac,x,-.25,zz,st)));
+      P.hold.L.set(.2,.48,.32); P.hold.R.set(-.2,.48,.32); P.strike={L:V(.17,.35,.46),R:V(-.17,.35,.46)};
+      stick('L',.25,.006,wood).aim=P.strike.L; stick('R',.25,.006,wood).aim=P.strike.R; }
+    else if(id==='taiko'){ // 楽太鼓（釣太鼓）：丸い枠に吊るし、前に座って打つ
+      const fr=new THREE.Group(); fr.position.set(0,.8,.66); it.add(fr);
+      mesh(new THREE.TorusGeometry(.62,.045,10,48),lacRed,0,0,0,fr);
+      for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; const f=mesh(new THREE.ConeGeometry(.06,.18,6),gold,Math.cos(a)*.72,Math.sin(a)*.72,0,fr); f.rotation.z=a-Math.PI/2; }
+      mesh(new THREE.SphereGeometry(.07,12,10),gold,0,.8,0,fr);
+      const dr=mesh(new THREE.CylinderGeometry(.45,.45,.22,36),lacRed,0,0,0,fr); dr.rotation.x=Math.PI/2;
+      for(let i=0;i<24;i++){ const a=i/24*Math.PI*2; [-.1,.1].forEach(zz=>mesh(new THREE.SphereGeometry(.015,6,4),gold,Math.cos(a)*.45,Math.sin(a)*.45,zz,fr)); }
+      [[0,.62],[0,-.62],[.62,0],[-.62,0]].forEach(([a,b])=>{ const c=limb(fr,gold,.012); setLimb(c,V(a*.73,b*.73,0),V(a,b,0)); });
+      const face=mesh(new THREE.CircleGeometry(.42,40),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7,emissive:0x000000}),0,0,-.112,fr); face.rotation.y=Math.PI;
+      mesh(new THREE.CircleGeometry(.42,40),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7}),0,0,.112,fr);
+      mesh(new THREE.BoxGeometry(.08,.6,.08),lac,0,-.5,0,fr).position.y=-.98+.3; mesh(new THREE.BoxGeometry(.9,.08,.44),lac,0,-.76,0,fr);
+      P.hold.L.set(.2,.62,.3); P.hold.R.set(-.2,.62,.3); P.strike={L:V(.12,.74,.55),R:V(-.1,.84,.55)}; P.face=face;
+      stick('L',.3,.012,wood,true).aim=P.strike.L; stick('R',.3,.012,wood,true).aim=P.strike.R; }
+    else if(id==='shoko'){ // 鉦鼓：枠に吊るした青銅の皿を2本の撥で打つ
+      const fr=new THREE.Group(); fr.position.set(0,.38,.46); it.add(fr);
+      const ring=mesh(new THREE.TorusGeometry(.24,.025,8,36),lacRed,0,.02,0,fr);
+      for(let i=0;i<10;i++){ const a=i/10*Math.PI*2; const f=mesh(new THREE.ConeGeometry(.025,.07,5),gold,Math.cos(a)*.28,.02+Math.sin(a)*.28,0,fr); f.rotation.z=a-Math.PI/2; }
+      [-.18,.18].forEach(x=>mesh(new THREE.BoxGeometry(.03,.3,.03),lac,x,-.24,0,fr)); mesh(new THREE.BoxGeometry(.5,.035,.2),lac,0,-.38,0,fr);
+      const d=mesh(new THREE.CylinderGeometry(.12,.1,.04,28,1,true),gold,0,.02,.0,fr); d.rotation.x=Math.PI/2; d.material=d.material.clone(); d.material.side=THREE.DoubleSide;
+      mesh(new THREE.CircleGeometry(.1,28),d.material,0,.02,-.02,fr).rotation.y=Math.PI;
+      P.hold.L.set(.12,.44,.3); P.hold.R.set(-.12,.44,.3); P.strike={L:V(.02,.38,.43),R:V(-.04,.42,.43)}; P.dish=d;
+      stick('L',.22,.006,wood,true).aim=P.strike.L; stick('R',.22,.006,wood,true).aim=P.strike.R; }
+    P.hands.L.copy(P.hold.L); P.hands.R.copy(P.hold.R);
     // 光の輪
-    const halo=new THREE.Mesh(new THREE.RingGeometry(.5,.66,48),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false}));
-    halo.rotation.x=-Math.PI/2; halo.position.y=.012; g.add(halo);
-    const hands={L:rest.L.clone(),R:rest.R.clone()};
-    const P={id,p,g,body,robe,halo,arm,hand,sh,rest,hands,extra,it,lv:0,bob:Math.random()*6};
+    const halo=new THREE.Mesh(new THREE.RingGeometry(.52,.68,48),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false}));
+    halo.rotation.x=-Math.PI/2; halo.position.y=.012; g.add(halo); P.halo=halo;
     g.traverse(o=>{ if(o.isMesh) o.userData.player=P; });
     players.push(P); return P;
   }
@@ -761,35 +877,49 @@ function initThree(){
     const r=cv.getBoundingClientRect(); mv.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1); ray.setFromCamera(mv,camera);
     const hitm=ray.intersectObjects(scene.children,true).find(h=>h.object.userData.player); if(hitm) toggle(hitm.object.userData.player.id); });
 
-  const v3=new THREE.Vector3(), tmpA=new THREE.Vector3();
-  three={ render(now,lvs,hitsNow,clock){
+  const v3=new THREE.Vector3(), tmpA=new THREE.Vector3(), tmpB=new THREE.Vector3(), tmpC=new THREE.Vector3();
+  three={ render(now,lvs,hitsNow,clock,pos){
     if(viewTween){ viewTween.t=Math.min(1,viewTween.t+.045); const e=1-Math.pow(1-viewTween.t,3); camera.position.lerpVectors(viewTween.from,viewTween.to,e); if(viewTween.t>=1) viewTween=null; }
     controls.update();
     for(const P of players){
       const on=state.on[P.id], target = on ? (lvs[P.id+P.p]||0) : 0;
       P.lv += (target-P.lv)*.18;
       const c=groupColor(P.id);
-      P.robe.emissive.copy(c).multiplyScalar(P.lv*.42);
+      P.robe.emissive.copy(c).multiplyScalar(P.lv*.3);
       P.halo.material.opacity = P.lv*.85;
       P.halo.scale.setScalar(1+P.lv*.08);
-      // 休んでいる奏者は少しうつむく
-      const bowT = on?0:.22; P.body.rotation.x += (bowT-P.body.rotation.x)*.1;
-      const breath = Math.sin(clock*1.4+P.bob)*.006*(1+P.lv*2);
-      P.body.position.y = (P.id==='taiko'?.05:0) + breath;
-      // 手の動き
-      const h=P.hands, R=P.rest, x=P.extra;
-      let tR=R.R, tL=R.L;
+      // 構える／下ろす：休みの奏者や、まだ加わっていない奏者（音取の助管など）は楽器を膝に下ろす
+      const ready = on && (!perf || pos===null || joined(P.id,P.p,pos+1.5));
+      P.lift += ((ready?1:0)-P.lift)*.07;
+      const breath = Math.sin(clock*1.4+P.bob)*.005*(1+P.lv*2);
+      P.body.position.y = breath; P.body.rotation.x = (1-P.lift)*.06;
+      const it=P.it, h=P.hands;
+      let tL, tR;
+      if(P.low){ const k=1-P.lift; it.position.copy(P.low.pos).multiplyScalar(k); it.rotation.set(P.low.rot.x*k,P.low.rot.y*k,P.low.rot.z*k); it.updateMatrix();
+        tL=tmpA.copy(P.hold.L).applyMatrix4(it.matrix); tR=tmpB.copy(P.hold.R).applyMatrix4(it.matrix); }
+      else { tL=tmpA.lerpVectors(P.knee.L,P.hold.L,P.lift); tR=tmpB.lerpVectors(P.knee.R,P.hold.R,P.lift); }
+      // 打つ・弾く手の動き
       const lastHit = hitsNow[P.id+P.p];
-      if(lastHit){ const age=now-lastHit.t, up=Math.max(0,1-age/.16);
-        if(P.id==='biwa'||P.id==='koto'){ tR=tmpA.copy(x.pick).add(v3.set(-.04*up,.12*up,0)); }
-        else if(P.id==='kakko'){ const right=lastHit.s>0; if(right) tR=tmpA.copy(x.R).add(v3.set(.06,.1*up,0)); else tL=tmpA.copy(x.L).add(v3.set(-.06,.1*up,0)); }
-        else if(P.id==='taiko'){ const strong=lastHit.s>0, a=Math.max(0,1-age/.25); if(strong) tR=tmpA.copy(x.hitR).add(v3.set(.05,.25*a,-.2*a)); else tL=tmpA.copy(x.hitL).add(v3.set(-.05,.2*a,-.15*a));
-          x.face.material.emissive.copy(c).multiplyScalar(Math.max(0,1-age/.5)*(strong?.6:.3)); }
-        else if(P.id==='shoko'){ tR=tmpA.copy(x.hit).add(v3.set(.03,.08*up,-.03)); x.dish.material.emissive=x.dish.material.emissive||new THREE.Color(); }
+      if(lastHit && ready){ const age=now-lastHit.t;
+        if(P.pick){ const up=Math.max(0,1-age/.16); tR.copy(P.pick).add(v3.set(.02*up,.07*up,-.02*up)); }
+        else if(P.strike){ const right = lastHit.s>0, side = right?'R':'L', T = right?tR:tL, home=P.hold[side];
+          const dur = P.id==='taiko'?.3:.16, k=Math.min(1,age/dur), dip=Math.sin(k*Math.PI)*(1-k*.4);
+          const st=P.sticks.find(s=>s.side===side), dir=v3.subVectors(P.strike[side],home).normalize();
+          const strikeHand=tmpC.copy(P.strike[side]).addScaledVector(dir,-st.len*.92);
+          T.lerpVectors(strikeHand,home,Math.min(1,k*1.4)).y += dip*(P.id==='taiko'?.12:.05);
+          if(P.face) P.face.material.emissive.copy(c).multiplyScalar(lastHit.s>0 && age<.5 ? (1-age/.5)*.6 : age<.5 ? (1-age/.5)*.3 : 0); }
       }
       h.R.lerp(tR,.45); h.L.lerp(tL,.45);
-      P.hand.R.position.copy(h.R); P.hand.L.position.copy(h.L);
-      setLimb(P.arm.R,P.sh.R,h.R); setLimb(P.arm.L,P.sh.L,h.L);
+      for(const s of ['L','R']){
+        const sh=tmpC.copy(P.sh[s]); sh.y+=breath;
+        P.hand[s].position.copy(h[s]);
+        const e=elbow(P.el[s],sh,h[s],s==='L'?1:-1);
+        setLimb(P.up[s],sh,e); setLimb(P.fo[s],e,h[s]);
+        setSleeve(P.sleeve[s],v3.lerpVectors(sh,e,.45),h[s]);
+      }
+      for(const s of P.sticks){ const hp=h[s.side], d=v3.subVectors(s.aim,hp); if(d.lengthSq()<1e-6) d.set(0,0,1); d.normalize();
+        if(s.flat){ d.y+=.6; d.normalize(); }
+        const tip=tmpC.copy(hp).addScaledVector(d,s.len); setLimb(s.m,hp,tip); if(s.k) s.k.position.copy(tip); }
     }
     for(const r of ripples){ if(!r.on) continue; r.t+=1/60; const k=r.t/1.1; if(k>=1){ r.on=false; r.m.material.opacity=0; continue; }
       r.m.scale.setScalar(.6+k*1.6*(.6+r.s*.6)); r.m.material.opacity=(1-k)*.55*r.s; }
@@ -906,7 +1036,7 @@ function frame(ms){
     const ph=phaseOf(b); if(ph && ph!==lastPhase){ lastPhase=ph; showCaption(ph); }
   } else { Object.keys(chipsI).forEach(id=>chipsI[id].style.setProperty('--lv','0')); }
   drawRing(pos!==null && pos>=0 && pos<PIECE ? pos : null);
-  if(three) three.render(ctx?ctx.currentTime:0,lvs,hitsNow,clock);
+  if(three) three.render(ctx?ctx.currentTime:0,lvs,hitsNow,clock,pos);
   requestAnimationFrame(frame);
 }
 
