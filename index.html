@@ -584,7 +584,7 @@ function biwaArp(t,arp,out,final,vel=1){
    ============================================================ */
 const state = { on:{}, bpm:BPM_DEFAULT, yuragi:true, ondo:true, playing:false };
 Object.keys(INST).forEach(id=>state.on[id]=true);
-try{ const s=JSON.parse(localStorage.getItem('gagaku-pref3')||'{}'); if(s.bpm && (!s.song || SONGS[s.song])) state.bpm=s.bpm; // 消した曲のテンポは引きつがない if('yuragi' in s) state.yuragi=s.yuragi; if('ondo' in s) state.ondo=s.ondo; }catch(e){}
+try{ const s=JSON.parse(localStorage.getItem('gagaku-pref3')||'{}'); if(s.bpm && (!s.song || SONGS[s.song])) state.bpm=s.bpm; /* 消した曲のテンポは引きつがない */ if('yuragi' in s) state.yuragi=s.yuragi; if('ondo' in s) state.ondo=s.ondo; }catch(e){}
 function savePref(){ try{ localStorage.setItem('gagaku-pref3',JSON.stringify({bpm:state.bpm,yuragi:state.yuragi,ondo:state.ondo,song:SONG.key})); }catch(e){} }
 
 let perf=null;
