@@ -418,7 +418,8 @@ let ctx=null, master, fx, padBus, inst={}, noiseBuf, shoWave;
 const LEVEL = {sho:.54,hichiriki:.218,ryuteki:.25,biwa:.24,koto:.16,kakko:.4,taiko:.95,shoko:.34};
 function initAudio(){
   if(ctx) return;
-  ctx = new (window.AudioContext||window.webkitAudioContext)();
+  const AC=window.AudioContext||window.webkitAudioContext;
+  try{ ctx=new AC({latencyHint:'balanced'}); }catch(e){ ctx=new AC(); } // 弱い端末でも音がとぎれにくいよう、出口の余裕を少し大きく
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value=-14; comp.ratio.value=3; comp.attack.value=.01; comp.release.value=.3;
   master = ctx.createGain(); master.gain.value=.9; master.connect(comp); comp.connect(ctx.destination);
   const len = ctx.sampleRate*2.6, ir = ctx.createBuffer(2,len,ctx.sampleRate);
@@ -522,18 +523,38 @@ let sawariCurve=null;
 // 琵琶・箏（録音の最後の一音ずつを解析して合わせた）：いちばん低い音（基音）は弱く、3〜4倍音あたりが強い明るい音。
 // 0.6〜0.9秒ほどで20dB小さくなる。T20＝20dB小さくなるまでの秒、hp/lp＝基音の何倍で低音・高音を切るか
 const PLUCK = { biwa:{T20:.85,bright:.6,hp:2.1,lp:8,peak:[1500,4],blend:.5}, koto:{T20:1.5,bright:.9,hp:2.7,lp:10,peak:[2400,3],blend:.22} };
-function pluck(kind,t,m,vel,out){
-  const f=f0(m), P=PLUCK[kind], src=ctx.createBufferSource(), g=ctx.createGain();
+// 一音の経路（絃→さわり→フィルター）を作る。ac は本番の ctx か、前もって作るための OfflineAudioContext
+function pluckChain(ac,kind,f,dest){
+  const P=PLUCK[kind], src=ac.createBufferSource();
   const hi=Math.max(1,f/330), bl=P.blend/(kind==='koto'?hi:1); // 高い音ほど高音が早く消えすぎないように
   src.buffer=ks(f,Math.min(3,P.T20*3.2),P.bright,Math.pow(.1,1/(f*P.T20*(kind==='koto'?Math.sqrt(hi):1))),Math.round(bl*100)/100);
-  const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=f*P.hp; hp.Q.value=.6;
-  const pk=ctx.createBiquadFilter(); pk.type='peaking'; pk.frequency.value=P.peak[0]; pk.Q.value=1; pk.gain.value=P.peak[1];
-  const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=Math.min(7500,f*P.lp); lp.Q.value=.5;
+  const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=f*P.hp; hp.Q.value=.6;
+  const pk=ac.createBiquadFilter(); pk.type='peaking'; pk.frequency.value=P.peak[0]; pk.Q.value=1; pk.gain.value=P.peak[1];
+  const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=Math.min(7500,f*P.lp); lp.Q.value=.5;
   let head=src;
   if(kind==='biwa'){ // 楽琵琶の弱いさわり（かすかなざらつき）
     if(!sawariCurve){ sawariCurve=new Float32Array(1024); for(let i=0;i<1024;i++){const x=i/512-1; sawariCurve[i]=Math.tanh(x*1.3)+.025*Math.sin(x*9);} }
-    const sh=ctx.createWaveShaper(); sh.curve=sawariCurve; src.connect(sh); head=sh;
-    const c=ctx.createBufferSource(); c.buffer=noiseBuf; const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2200; bp.Q.value=1; // 撥が絃に当たる音
+    const sh=ac.createWaveShaper(); sh.curve=sawariCurve; src.connect(sh); head=sh; }
+  head.connect(hp); hp.connect(pk); pk.connect(lp); lp.connect(dest);
+  return src;
+}
+// 処理落ちを防ぐため、琵琶・箏の一音は高さごとに一度だけ前もって計算し、あとは録った音を鳴らすだけにする（音は同じ）
+const pluckBaked=new Map(), pluckBaking=new Set();
+function bakePluck(kind,m){
+  const key=kind+m; if(pluckBaked.has(key)||pluckBaking.has(key)||!window.OfflineAudioContext) return;
+  pluckBaking.add(key);
+  try{ const f=f0(m), n=Math.floor(ctx.sampleRate*Math.min(3,PLUCK[kind].T20*3.2)), oc=new OfflineAudioContext(1,n,ctx.sampleRate);
+    pluckChain(oc,kind,f,oc.destination).start(0);
+    oc.startRendering().then(b=>{ pluckBaked.set(key,b); pluckBaking.delete(key); },()=>pluckBaking.delete(key)); }
+  catch(e){ pluckBaking.delete(key); }
+}
+function pluck(kind,t,m,vel,out){
+  const g=ctx.createGain(), baked=pluckBaked.get(kind+m);
+  let src;
+  if(baked){ src=ctx.createBufferSource(); src.buffer=baked; src.connect(g); }
+  else { src=pluckChain(ctx,kind,f0(m),g); bakePluck(kind,m); } // まだ作っていない高さは、その場で鳴らして次から使う
+  if(kind==='biwa'){ // 撥が絃に当たる音
+    const c=ctx.createBufferSource(); c.buffer=noiseBuf; const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2200; bp.Q.value=1;
     const cg=ctx.createGain(); cg.gain.setValueAtTime(.22*vel,t); cg.gain.exponentialRampToValueAtTime(.001,t+.03);
     c.connect(bp); bp.connect(cg); cg.connect(out); c.start(t,Math.random()); c.stop(t+.04);
   } else { // 爪が絃をはじく音
@@ -541,7 +562,6 @@ function pluck(kind,t,m,vel,out){
     const cg=ctx.createGain(); cg.gain.setValueAtTime(.08*vel,t); cg.gain.exponentialRampToValueAtTime(.001,t+.012);
     c.connect(bp); bp.connect(cg); cg.connect(out); c.start(t,Math.random()); c.stop(t+.02);
   }
-  head.connect(hp); hp.connect(pk); pk.connect(lp); lp.connect(g);
   g.gain.value=vel*2.2; g.connect(out); src.start(t);
 }
 // 打物の音（録音 eten.mp3 の打音を解析して合わせた）
@@ -550,7 +570,7 @@ function pluck(kind,t,m,vel,out){
 // ・鉦鼓：約2.2k・3.5k・5.5k・8.5kHzの金属の響き。0.5秒ほどの短い「チン」。チ（左）は弱く、こもる
 function dEnv(g,t,peak,att,tau){ g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(peak,t+att); g.gain.setTargetAtTime(0,t+att,tau); }
 function tone(t,f,peak,att,tau,out,f2,glide){ const o=ctx.createOscillator(), g=ctx.createGain(); o.frequency.setValueAtTime(f,t);
-  if(f2) o.frequency.setTargetAtTime(f2,t+.005,glide); dEnv(g,t,peak,att,tau); o.connect(g); g.connect(out); o.start(t); o.stop(t+att+tau*7); }
+  if(f2) o.frequency.setTargetAtTime(f2,t+.005,glide); dEnv(g,t,peak,att,tau); o.connect(g); g.connect(out); o.start(t); o.stop(t+att+tau*5.8); }
 function noiseHit(t,type,freq,q,peak,dur,out){ const n=ctx.createBufferSource(); n.buffer=noiseBuf; const fl=ctx.createBiquadFilter(); fl.type=type; fl.frequency.value=freq; fl.Q.value=q;
   const g=ctx.createGain(); g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.0005,t+dur); n.connect(fl); fl.connect(g); g.connect(out); n.start(t,Math.random()*1.5); n.stop(t+dur+.02); }
 function drum(kind,t,k,vel,out){
@@ -620,6 +640,7 @@ const OFF=[0,.019,-.013], DET=[1,Math.pow(2,7/1200),Math.pow(2,-6/1200)], VG=[1,
 function start(fromBeat=0){
   initAudio(); if(ctx.state==='suspended') ctx.resume();
   stop(true);
+  SCORE.forEach(e=>{ if(e.raw) bakePluck(e.inst,e.midi); });
   const outs={}; Object.keys(INST).forEach(id=>{ const g=ctx.createGain(); g.connect(inst[id].g); outs[id]=g; });
   const t0=ctx.currentTime+.4;
   perf = { outs, from:fromBeat, k:fromBeat, nextT:t0, beatT:{}, vis:[], hits:[], ondo: state.ondo && SONG.ondo && fromBeat<=0, endT:null,
@@ -649,10 +670,13 @@ function rawPluck(e,et,o){
   perf.vis.push({i:e.inst,t0:et,t1:et+.55,l:RITSU[pc(e.midi)],ps});
 }
 function hit(i,p,t,s=1){ perf.hits.push({i,p,t,s}); }
+const LOOKAHEAD=.6; // 何秒先までの音を前もって予約しておくか（3Dの描画が重くても音が遅れないように）
 function tick(){
   if(!perf) return;
   const now=ctx.currentTime;
-  while(perf.k<TOTAL && perf.nextT<now+.25){
+  // 画面が長く止まって予約が間に合わなかったときは、たまった音をまとめて鳴らさず、少し待ってから続きを鳴らす
+  if(perf.k<TOTAL && perf.nextT<now+.03){ perf.nextT=now+.1; perf.beatT[perf.k]=perf.nextT; }
+  while(perf.k<TOTAL && perf.nextT<now+LOOKAHEAD){
     const k=perf.k, t=perf.nextT, d=beatDur(k), spb=60/state.bpm*(k<0?1.3:1);
     const tAt = b => t+(b-k)*d;
     const durS = beats => beats*d*(k>=0&&state.yuragi?1.035:1);
@@ -1418,8 +1442,9 @@ const lvs={}, hitsNow={};
 function frame(ms){
   let pos=null; const clock=ms/1000;
   for(const k in lvs) lvs[k]=0;
+  if(perf && ctx) tick(); // 描画のたびにも予約を進める（曲が終わると perf が消えるので先に）
   if(perf && ctx){
-    const now=ctx.currentTime;
+    const now=ctx.currentTime-(ctx.outputLatency||ctx.baseLatency||0); // スピーカーから音が出る時刻に合わせる
     let k=perf.from; while(perf.beatT[k+1]!==undefined && perf.beatT[k+1]<=now) k++;
     const t0=perf.beatT[k], t1=perf.beatT[k+1];
     pos = now<t0 ? perf.from-.001 : k + (t1? Math.min(1,(now-t0)/(t1-t0)) : 0);
