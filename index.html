@@ -380,7 +380,7 @@ const INST_GROUP = {}; GROUPS.forEach(g=>g.insts.forEach(i=>INST_GROUP[i]=g));
    ============================================================ */
 let ctx=null, master, fx, padBus, inst={}, noiseBuf, shoWave;
 // 音量のつり合い：篳篥を基準に、龍笛 −3dB・笙 −5dB・琵琶と箏（強い音）−7dB・鞨鼓 −8dB・鉦鼓 −6dB、太鼓の百はいちばん強く（ブラウザ内で実測して合わせた）
-const LEVEL = {sho:.54,hichiriki:.3,ryuteki:.25,biwa:.14,koto:.32,kakko:.61,taiko:.95,shoko:.18};
+const LEVEL = {sho:.54,hichiriki:.3,ryuteki:.25,biwa:.14,koto:.32,kakko:.4,taiko:.95,shoko:.34};
 function initAudio(){
   if(ctx) return;
   ctx = new (window.AudioContext||window.webkitAudioContext)();
@@ -500,32 +500,30 @@ function pluck(kind,t,m,vel,out){
   }
   g.gain.value=vel; g.connect(out); src.start(t);
 }
+// 打物の音（録音 eten.mp3 の打音を解析して合わせた）
+// ・太鼓：百は約58Hz→47Hzへ少し沈み、3秒ほど低く響く。図は約59Hzでほぼ音程が変わらず、弱め
+// ・鞨鼓：800Hzあたりに響きが集まる、短く乾いた音。左右の革で少し高さがちがう
+// ・鉦鼓：約2.2k・3.5k・5.5k・8.5kHzの金属の響き。0.5秒ほどの短い「チン」。チ（左）は弱く、こもる
+function dEnv(g,t,peak,att,tau){ g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(peak,t+att); g.gain.setTargetAtTime(0,t+att,tau); }
+function tone(t,f,peak,att,tau,out,f2,glide){ const o=ctx.createOscillator(), g=ctx.createGain(); o.frequency.setValueAtTime(f,t);
+  if(f2) o.frequency.setTargetAtTime(f2,t+.005,glide); dEnv(g,t,peak,att,tau); o.connect(g); g.connect(out); o.start(t); o.stop(t+att+tau*7); }
+function noiseHit(t,type,freq,q,peak,dur,out){ const n=ctx.createBufferSource(); n.buffer=noiseBuf; const fl=ctx.createBiquadFilter(); fl.type=type; fl.frequency.value=freq; fl.Q.value=q;
+  const g=ctx.createGain(); g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.0005,t+dur); n.connect(fl); fl.connect(g); g.connect(out); n.start(t,Math.random()*1.5); n.stop(t+dur+.02); }
 function drum(kind,t,k,vel,out){
   if(kind==='taiko'){
-    const strong=k==='do', o=ctx.createOscillator(), g=ctx.createGain();
-    o.frequency.setValueAtTime(strong?118:100,t); o.frequency.exponentialRampToValueAtTime(strong?52:56,t+.28);
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime((strong?1:.45)*vel,t+.006); g.gain.exponentialRampToValueAtTime(.001,t+(strong?2.2:1.3));
-    o.connect(g); g.connect(out); o.start(t); o.stop(t+2.4);
-    const o2=ctx.createOscillator(), g2=ctx.createGain(); o2.frequency.value=strong?176:150; g2.gain.setValueAtTime((strong?.35:.18)*vel,t); g2.gain.exponentialRampToValueAtTime(.001,t+.45);
-    o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t+.5);
-    const n=ctx.createBufferSource(); n.buffer=noiseBuf; const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=strong?520:380;
-    const ng=ctx.createGain(); ng.gain.setValueAtTime((strong?.7:.3)*vel,t); ng.gain.exponentialRampToValueAtTime(.001,t+.18);
-    n.connect(lp); lp.connect(ng); ng.connect(out); n.start(t,Math.random()); n.stop(t+.2);
+    const strong=k==='do', v=(strong?1:.5)*vel;
+    if(strong){ tone(t,60,.95*v,.008,1.05,out,47,.15); tone(t,82,.42*v,.006,.5,out,67,.08); tone(t,159,.12*v,.004,.22,out,150,.1); tone(t,226,.05*v,.003,.12,out); }
+    else { tone(t,60,.95*v,.01,.82,out,57.5,.25); tone(t,85,.3*v,.008,.38,out,82,.2); tone(t,163,.08*v,.004,.18,out); }
+    noiseHit(t,'lowpass',strong?420:300,.7,(strong?.55:.3)*vel,strong?.09:.07,out);   // 桴が革に当たる「ドッ」
+    noiseHit(t,'bandpass',1100,1.2,(strong?.05:.03)*vel,.03,out);                    // 革の表面の手ざわり
   } else if(kind==='kakko'){
-    const o=ctx.createOscillator(), g=ctx.createGain(); const base=k==='L'?520:560;
-    o.frequency.setValueAtTime(base,t); o.frequency.exponentialRampToValueAtTime(base*.78,t+.06);
-    g.gain.setValueAtTime(.55*vel,t); g.gain.exponentialRampToValueAtTime(.001,t+.11); o.connect(g); g.connect(out); o.start(t); o.stop(t+.13);
-    const n=ctx.createBufferSource(); n.buffer=noiseBuf; const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1500; bp.Q.value=1.6;
-    const ng=ctx.createGain(); ng.gain.setValueAtTime(.9*vel,t); ng.gain.exponentialRampToValueAtTime(.001,t+.05);
-    n.connect(bp); bp.connect(ng); ng.connect(out); n.start(t,Math.random()); n.stop(t+.07);
+    const f=k==='L'?770:820, v=vel;
+    tone(t,f,.55*v,.0015,.042,out,f*.97,.03); tone(t,f*1.59,.34*v,.001,.03,out); tone(t,f*2.14,.12*v,.001,.02,out); tone(t,205,.07*v,.002,.05,out);
+    noiseHit(t,'bandpass',2600,1.2,.6*v,.02,out);                                   // 細い撥の当たる音
   } else {
-    const soft=k==='chi', base=1640;
-    [[1,1,.9],[2.31,.55,.6],[4.07,.3,.35],[6.2,.18,.22],[1.007,.5,.9]].forEach(([r,a,dec])=>{
-      const o=ctx.createOscillator(), g=ctx.createGain(); o.frequency.value=base*r;
-      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(a*vel*(soft?.45:1),t+.002); g.gain.exponentialRampToValueAtTime(.0008,t+dec*(soft?.6:1));
-      o.connect(g); g.connect(out); o.start(t); o.stop(t+dec+.05); });
-    const n=ctx.createBufferSource(); n.buffer=noiseBuf; const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=5000;
-    const ng=ctx.createGain(); ng.gain.setValueAtTime(.25*vel,t); ng.gain.exponentialRampToValueAtTime(.001,t+.03); n.connect(hp); hp.connect(ng); ng.connect(out); n.start(t,Math.random()); n.stop(t+.04);
+    const soft=k==='chi', v=vel*(soft?.5:1), d=soft?.6:1;
+    [[2160,1,.25],[2178,.45,.3],[3480,.5,.2],[5500,.55*(soft?.5:1),.16],[8540,.25*(soft?.3:1),.08]].forEach(([fr,a,tau])=>tone(t,fr,a*.42*v,.0008,tau*d,out));
+    noiseHit(t,'highpass',5000,.7,(soft?.06:.16)*vel,.008,out);                        // 撥の先が当たる「カッ」
   }
 }
 function kakkoStroke(k,t,spb,out,hits=[],times,vels){
