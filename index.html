@@ -380,7 +380,7 @@ const INST_GROUP = {}; GROUPS.forEach(g=>g.insts.forEach(i=>INST_GROUP[i]=g));
    ============================================================ */
 let ctx=null, master, fx, padBus, inst={}, noiseBuf, shoWave;
 // 音量のつり合い：篳篥を基準に、龍笛 −3dB・笙 −5dB・琵琶と箏（強い音）−7dB・鞨鼓 −8dB・鉦鼓 −6dB、太鼓の百はいちばん強く（ブラウザ内で実測して合わせた）
-const LEVEL = {sho:.54,hichiriki:.3,ryuteki:.25,biwa:.14,koto:.32,kakko:.4,taiko:.95,shoko:.34};
+const LEVEL = {sho:.54,hichiriki:.218,ryuteki:.25,biwa:.24,koto:.16,kakko:.4,taiko:.95,shoko:.34};
 function initAudio(){
   if(ctx) return;
   ctx = new (window.AudioContext||window.webkitAudioContext)();
@@ -400,6 +400,7 @@ function initAudio(){
 }
 function setMuteGain(id,on){ if(!ctx) return; const g=inst[id].g.gain; g.cancelScheduledValues(ctx.currentTime); g.setTargetAtTime(on?LEVEL[id]:0,ctx.currentTime,.06); }
 
+const HICHI_EQ=[['peaking',1450,1,8],['peaking',2100,1.8,4],['peaking',4000,1.5,8],['lowpass',5000,1],['lowpass',6500,.5]];
 class Wind{
   constructor(kind,out,gain=1){
     this.kind=kind; this.params=[]; this.srcs=[];
@@ -411,13 +412,15 @@ class Wind{
       const m2=ctx.createGain(); m2.gain.value=.35;
       const sh=ctx.createWaveShaper(); const c=new Float32Array(1024); for(let i=0;i<1024;i++){const x=i/512-1; c[i]=Math.tanh(x*1.8);} sh.curve=c;
       const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=260;
-      const p1=ctx.createBiquadFilter(); p1.type='peaking'; p1.frequency.value=1150; p1.Q.value=1.3; p1.gain.value=9;
-      const p2=ctx.createBiquadFilter(); p2.type='peaking'; p2.frequency.value=2700; p2.Q.value=2; p2.gain.value=5;
-      const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=4200; lp.Q.value=.5;
+      // 響きの山（録音の篳篥の倍音の強さに合わせた）：[種類, 周波数, Q, 増減dB]
+      let node=hp; for(const [ty,fr,q,gn] of HICHI_EQ){ const b=ctx.createBiquadFilter(); b.type=ty; b.frequency.value=fr; b.Q.value=q; if(gn!==undefined) b.gain.value=gn; node.connect(b); node=b; }
       const pre=ctx.createGain(); pre.gain.value=.5;
-      o1.connect(pre); o2.connect(m2); m2.connect(pre); pre.connect(sh); sh.connect(hp); hp.connect(p1); p1.connect(p2); p2.connect(lp); lp.connect(env);
+      o1.connect(pre); o2.connect(m2); m2.connect(pre); pre.connect(sh); sh.connect(hp); node.connect(env);
+      // 息とリードのざらつき（細い帯域の雑音を少し）
+      const bz=ctx.createBufferSource(); bz.buffer=noiseBuf; bz.loop=true; const bzf=ctx.createBiquadFilter(); bzf.type='bandpass'; bzf.frequency.value=3200; bzf.Q.value=.8;
+      const bzg=ctx.createGain(); bzg.gain.value=.018; bz.connect(bzf); bzf.connect(bzg); bzg.connect(env);
       const lfo=ctx.createOscillator(); lfo.frequency.value=4.2+Math.random()*.8; const lg=ctx.createGain(); lg.gain.value=4; lfo.connect(lg); lg.connect(o1.detune); lg.connect(o2.detune);
-      this.params=[[o1.frequency,1],[o2.frequency,1]]; this.srcs=[o1,o2,lfo];
+      this.params=[[o1.frequency,1],[o2.frequency,1]]; this.srcs=[o1,o2,lfo,bz];
     } else {
       const o1=ctx.createOscillator(); o1.type='sine';
       const o2=ctx.createOscillator(); o2.type='triangle'; const g2=ctx.createGain(); g2.gain.value=.12;
@@ -470,35 +473,41 @@ class Sho{
   off(t){ for(const [,v] of this.v){ v.g.gain.setTargetAtTime(0,t,.12); try{v.o.stop(t+1.2)}catch(e){} } this.v.clear(); this.cur=null; }
 }
 const ksCache=new Map();
-function ks(f,sec,bright,damp){
-  const key=f.toFixed(2)+'|'+sec+'|'+bright+'|'+damp; if(ksCache.has(key)) return ksCache.get(key);
+function ks(f,sec,bright,damp,blend=.5){
+  const key=f.toFixed(2)+'|'+sec+'|'+bright+'|'+damp+'|'+blend; if(ksCache.has(key)) return ksCache.get(key);
   const sr=ctx.sampleRate, n=Math.floor(sr*sec), buf=ctx.createBuffer(1,n,sr), d=buf.getChannelData(0);
   const L=Math.max(2,Math.round(sr/f-.5)), line=new Float32Array(L); let p=0;
   for(let i=0;i<L;i++){ p+=bright*((Math.random()*2-1)-p); line[i]=p; }
   let ix=0, mx=0;
-  for(let i=0;i<n;i++){ const a=line[ix], b=line[(ix+1)%L]; line[ix]=damp*.5*(a+b); d[i]=a; ix=(ix+1)%L; if(Math.abs(a)>mx) mx=Math.abs(a); }
+  for(let i=0;i<n;i++){ const a=line[ix], b=line[(ix+1)%L]; line[ix]=damp*((1-blend)*a+blend*b); d[i]=a; ix=(ix+1)%L; if(Math.abs(a)>mx) mx=Math.abs(a); }
   const k=.9/(mx||1), fade=Math.floor(sr*.05); for(let i=0;i<n;i++){ d[i]*=k; if(i>n-fade) d[i]*=(n-i)/fade; }
   ksCache.set(key,buf); return buf;
 }
 let sawariCurve=null;
+// 琵琶・箏（録音の最後の一音ずつを解析して合わせた）：いちばん低い音（基音）は弱く、3〜4倍音あたりが強い明るい音。
+// 0.6〜0.9秒ほどで20dB小さくなる。T20＝20dB小さくなるまでの秒、hp/lp＝基音の何倍で低音・高音を切るか
+const PLUCK = { biwa:{T20:.85,bright:.6,hp:2.1,lp:8,peak:[1500,4],blend:.5}, koto:{T20:1.5,bright:.9,hp:2.7,lp:10,peak:[2400,3],blend:.22} };
 function pluck(kind,t,m,vel,out){
-  const f=f0(m), src=ctx.createBufferSource(), g=ctx.createGain();
-  if(kind==='biwa'){
-    src.buffer=ks(f,2.6,.55,.9965);
-    if(!sawariCurve){ sawariCurve=new Float32Array(1024); for(let i=0;i<1024;i++){const x=i/512-1; sawariCurve[i]=Math.tanh(x*2.4)+.08*Math.sin(x*9);} }
-    const sh=ctx.createWaveShaper(); sh.curve=sawariCurve;
-    const pk=ctx.createBiquadFilter(); pk.type='peaking'; pk.frequency.value=1600; pk.Q.value=1.2; pk.gain.value=6;
-    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=3800;
-    src.connect(sh); sh.connect(pk); pk.connect(lp); lp.connect(g);
-    const c=ctx.createBufferSource(); c.buffer=noiseBuf; const hp=ctx.createBiquadFilter(); hp.type='bandpass'; hp.frequency.value=2400; hp.Q.value=.9;
-    const cg=ctx.createGain(); cg.gain.setValueAtTime(.35*vel,t); cg.gain.exponentialRampToValueAtTime(.001,t+.035);
-    c.connect(hp); hp.connect(cg); cg.connect(out); c.start(t,Math.random()); c.stop(t+.05);
-  } else {
-    src.buffer=ks(f,3.2,.75,.9982);
-    const pk=ctx.createBiquadFilter(); pk.type='peaking'; pk.frequency.value=2200; pk.Q.value=1; pk.gain.value=3;
-    src.connect(pk); pk.connect(g);
+  const f=f0(m), P=PLUCK[kind], src=ctx.createBufferSource(), g=ctx.createGain();
+  const hi=Math.max(1,f/330), bl=P.blend/(kind==='koto'?hi:1); // 高い音ほど高音が早く消えすぎないように
+  src.buffer=ks(f,Math.min(3,P.T20*3.2),P.bright,Math.pow(.1,1/(f*P.T20*(kind==='koto'?Math.sqrt(hi):1))),Math.round(bl*100)/100);
+  const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=f*P.hp; hp.Q.value=.6;
+  const pk=ctx.createBiquadFilter(); pk.type='peaking'; pk.frequency.value=P.peak[0]; pk.Q.value=1; pk.gain.value=P.peak[1];
+  const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=Math.min(7500,f*P.lp); lp.Q.value=.5;
+  let head=src;
+  if(kind==='biwa'){ // 楽琵琶の弱いさわり（かすかなざらつき）
+    if(!sawariCurve){ sawariCurve=new Float32Array(1024); for(let i=0;i<1024;i++){const x=i/512-1; sawariCurve[i]=Math.tanh(x*1.3)+.025*Math.sin(x*9);} }
+    const sh=ctx.createWaveShaper(); sh.curve=sawariCurve; src.connect(sh); head=sh;
+    const c=ctx.createBufferSource(); c.buffer=noiseBuf; const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2200; bp.Q.value=1; // 撥が絃に当たる音
+    const cg=ctx.createGain(); cg.gain.setValueAtTime(.22*vel,t); cg.gain.exponentialRampToValueAtTime(.001,t+.03);
+    c.connect(bp); bp.connect(cg); cg.connect(out); c.start(t,Math.random()); c.stop(t+.04);
+  } else { // 爪が絃をはじく音
+    const c=ctx.createBufferSource(); c.buffer=noiseBuf; const bp=ctx.createBiquadFilter(); bp.type='highpass'; bp.frequency.value=3500;
+    const cg=ctx.createGain(); cg.gain.setValueAtTime(.08*vel,t); cg.gain.exponentialRampToValueAtTime(.001,t+.012);
+    c.connect(bp); bp.connect(cg); cg.connect(out); c.start(t,Math.random()); c.stop(t+.02);
   }
-  g.gain.value=vel; g.connect(out); src.start(t);
+  head.connect(hp); hp.connect(pk); pk.connect(lp); lp.connect(g);
+  g.gain.value=vel*2.2; g.connect(out); src.start(t);
 }
 // 打物の音（録音 eten.mp3 の打音を解析して合わせた）
 // ・太鼓：百は約58Hz→47Hzへ少し沈み、3秒ほど低く響く。図は約59Hzでほぼ音程が変わらず、弱め
