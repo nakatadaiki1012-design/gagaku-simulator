@@ -197,6 +197,19 @@ details p{margin:.6em 0 0;font-size:14px;max-width:62ch}
 .tog[aria-checked="true"]::after{transform:translateX(20px)}
 input[type=range]{width:100%;accent-color:var(--kin)}
 .learn{display:grid;gap:10px}
+.learn[hidden],.pane[hidden]{display:none}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-top:-6px}
+.tabs button{padding:8px 14px;font-weight:700;font-size:14.5px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--kin)}
+.gsearch{width:100%;font:inherit;font-size:15px;padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-bottom:6px}
+.gcat{font-family:var(--f-display);font-weight:800;color:var(--kin);font-size:14px;letter-spacing:.08em;margin:12px 0 4px}
+.term{border-bottom:1px solid var(--line);padding:2px 0}
+.term summary{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:10px;padding:8px 2px}
+.term summary::-webkit-details-marker{display:none}
+.term summary b{font-family:var(--f-display);font-size:17px}
+.term summary small{color:var(--muted);font-size:12px}
+.term p{margin:0 2px 10px;font-size:14px;line-height:1.7;max-width:60ch}
+.gnone{color:var(--muted);font-size:14px}
 .card{border:1px solid var(--line);border-radius:16px;background:var(--bg)}
 .card>button.h{width:100%;display:flex;align-items:center;gap:12px;padding:14px;text-align:left}
 .card .n{font-family:var(--f-display);font-weight:800;font-size:15px;color:var(--kin);width:22px;flex:none}
@@ -1503,11 +1516,68 @@ const LEARN = [
 ];
 function playWith(list,from=0){ only(list); start(from); dlg.close(); }
 const NUM=['一','二','三','四','五','六','七'];
+// 雅楽の用語集（「しくみ」の中の「用語集」タブ）。出典：文化デジタルライブラリー「雅楽」、コトバンク「舞楽」「舞楽装束」、Wikipedia「国風歌舞」ほか
+const GLOSS = [
+  {c:'雅楽の種類', w:'雅楽', y:'ががく', d:'日本で1000年以上受けつがれてきた、宮廷の音楽と舞。大きく「国風歌舞」「大陸から伝わった楽舞（唐楽・高麗楽）」「歌物」に分かれる。ユネスコの無形文化遺産にも登録されている。'},
+  {c:'雅楽の種類', w:'国風歌舞', y:'くにぶりのうたまい', d:'日本にもとからあった歌と舞を、宮中の儀式や神事のために整えたもの。神楽歌・東遊・久米歌・大和歌・五節舞などがある。神楽笛・和琴・笏拍子などを使い、唐楽とは楽器の組み合わせがちがう。'},
+  {c:'雅楽の種類', w:'神楽歌', y:'かぐらうた', d:'国風歌舞のひとつ。宮中の神事で歌い舞われる。'},
+  {c:'雅楽の種類', w:'東遊', y:'あずまあそび', d:'国風歌舞のひとつ。東国（関東地方）の歌がもとになり、平安時代に形が整えられた。4人または6人で舞う。'},
+  {c:'雅楽の種類', w:'久米歌・久米舞', y:'くめうた・くめまい', d:'国風歌舞のひとつ。古代の軍事集団・久米部に伝わった歌舞がもとになっている。'},
+  {c:'雅楽の種類', w:'大和歌・大和舞', y:'やまとうた・やまとまい', d:'国風歌舞のひとつ。大和地方（今の奈良県）の歌舞がもとになっている。'},
+  {c:'雅楽の種類', w:'五節舞', y:'ごせちのまい', d:'国風歌舞のひとつ。大嘗祭などで、5人の舞姫が舞う。'},
+  {c:'雅楽の種類', w:'唐楽', y:'とうがく', d:'中国（唐）や、インド・東南アジア方面から伝わった音楽をもとにしたもの。越天楽は唐楽の曲。舞楽では左舞の音楽になる。'},
+  {c:'雅楽の種類', w:'高麗楽', y:'こまがく', d:'朝鮮半島や渤海から伝わった音楽をもとにしたもの。舞楽では右舞の音楽になる。'},
+  {c:'雅楽の種類', w:'管絃', y:'かんげん', d:'舞をともなわず、楽器だけで演奏する形。このアプリの越天楽はこの形。'},
+  {c:'雅楽の種類', w:'舞楽', y:'ぶがく', d:'舞をともなう演奏。左舞と右舞に分かれる。'},
+  {c:'雅楽の種類', w:'歌物', y:'うたもの', d:'歌を中心にしたもの。民謡などに曲をつけた催馬楽（さいばら）や、漢詩を歌う朗詠（ろうえい）がある。'},
+  {c:'舞楽のことば', w:'左舞', y:'さまい', d:'唐楽に合わせて舞う舞楽。装束は赤（と金）が基調。舞台の左側から登場し、左足から踏み出すなど「左」を基本にする。'},
+  {c:'舞楽のことば', w:'右舞', y:'うまい', d:'高麗楽に合わせて舞う舞楽。装束は緑（青）（と銀）が基調。右側から登場し、右足を軸に動く。楽器は笙を使わず、高麗笛や三ノ鼓（さんのつづみ）を使う。'},
+  {c:'舞楽のことば', w:'番舞', y:'つがいまい', d:'左舞と右舞を一組にして続けて舞うこと。たとえば「万歳楽」と「延喜楽」、「陵王」と「納曽利」。後に舞う右舞を「答舞（とうぶ）」ともいう。'},
+  {c:'舞楽のことば', w:'陵王（蘭陵王）', y:'りょうおう（らんりょうおう）', d:'左舞の代表的な曲。竜の頭をかたどった面をつけ、金色の桴を持って一人で勇ましく舞う。中国・北斉の将軍が、美しい顔をかくすために恐ろしい面をつけて戦ったという言い伝えがある（史実かどうかははっきりしない）。番舞は納曽利。'},
+  {c:'舞楽のことば', w:'納曽利', y:'なそり', d:'右舞の曲で、陵王と一組（番舞）になる。竜がたわむれるようすを表すといわれる。'},
+  {c:'舞楽のことば', w:'走舞', y:'はしりまい', d:'面をつけて、活発に動き回る舞。陵王・納曽利など。'},
+  {c:'舞楽のことば', w:'青海波', y:'せいがいは', d:'左舞の曲。波の模様の装束をつけた二人が、ゆったりと優雅に舞う。'},
+  {c:'舞楽のことば', w:'鼉太鼓', y:'だだいこ', d:'舞楽で使う、火焔の飾りがついたとても大きな太鼓。左右一対で置かれる。'},
+  {c:'楽器と編成', w:'三管両絃三鼓', y:'さんかんりょうげんさんこ', d:'管絃の楽器の組み合わせ。三管＝笙・篳篥・龍笛、両絃＝琵琶・箏、三鼓＝鞨鼓・太鼓・鉦鼓。'},
+  {c:'楽器と編成', w:'吹物・弾物・打物', y:'ふきもの・ひきもの・うちもの', d:'管楽器・弦楽器・打楽器のこと。舞台では、前から打物・弾物・吹物の順に座る。'},
+  {c:'楽器と編成', w:'合竹', y:'あいたけ', d:'笙で5〜6本の竹を同時に鳴らす和音。11種類ある。'},
+  {c:'楽器と編成', w:'手移り', y:'てうつり', d:'笙の和音を変えるとき、指を一本ずつずらして少しずつ次の和音へ移ること。'},
+  {c:'楽器と編成', w:'塩梅', y:'えんばい', d:'篳篥で、音を下からすくい上げるように、息と唇で音の高さをなめらかに動かすこと。'},
+  {c:'楽器と編成', w:'唱歌', y:'しょうが', d:'楽器の旋律を、声で歌って覚える方法。雅楽の練習ではまず唱歌から習う。'},
+  {c:'楽器と編成', w:'主管・助管', y:'しゅかん・すけくだ', d:'同じ楽器の奏者のうち、首席を主管、ほかの奏者を助管という。'},
+  {c:'曲の進み方', w:'音取', y:'ねとり', d:'曲の前に、それぞれの楽器が短く音を出して、調子と音の高さを合わせる演奏。'},
+  {c:'曲の進み方', w:'音頭', y:'おんど', d:'曲の始めを、首席奏者がひとりで吹き出すこと。越天楽では龍笛の首席。'},
+  {c:'曲の進み方', w:'付所', y:'つけどころ', d:'音頭のあと、ほかの楽器が加わる決まった場所。'},
+  {c:'曲の進み方', w:'留手', y:'とめで', d:'曲の終わり方。管が吹きおさめたあと、琵琶と箏だけで曲を結ぶ。'},
+  {c:'曲の進み方', w:'返', y:'かえし', d:'同じ段をくり返すこと。1回目を一返、2回目を二返という。'},
+  {c:'曲の進み方', w:'小拍子', y:'こびょうし', d:'拍のまとまり。越天楽では4拍で1小拍子、8小拍子で1つの段。'},
+  {c:'曲の進み方', w:'早四拍子', y:'はやよひょうし', d:'4つの小拍子で太鼓がひとめぐりする拍子。越天楽の拍子。'},
+  {c:'曲の進み方', w:'図・百', y:'ずん・どう', d:'太鼓の打ち方。左手で弱く打つのが図、右手で強く打つのが百。百は大きな節目になる。'},
+  {c:'曲の進み方', w:'片来・諸来・正', y:'かたらい・もろらい・せい', d:'鞨鼓の打ち方。片来は片手でだんだん速くなる連打、諸来は両手の細かい連打、正は一打だけ。'},
+  {c:'曲の進み方', w:'加拍子', y:'かびょうし', d:'曲の後半などで、太鼓の打つ回数が倍になり、拍子が引きしまること。'},
+  {c:'調子', w:'六調子', y:'ろくちょうし', d:'唐楽で使う6つの調子：壱越調・平調・双調・黄鐘調・盤渉調・太食調。'},
+  {c:'調子', w:'平調', y:'ひょうじょう', d:'E（ミ）の音を中心にした調子。越天楽（平調越天楽）はこの調子。'},
+  {c:'調子', w:'渡物', y:'わたしもの', d:'同じ曲を別の調子に移したもの。越天楽には平調のほか、盤渉調・黄鐘調のものがある。移すと音の動きが一部変わる。'},
+  {c:'装束と人', w:'直垂', y:'ひたたれ', d:'管絃の奏者が着る装束。袖が大きく、袴と同じ布でできている。このアプリの奏者は海松色（みるいろ）の直垂。'},
+  {c:'装束と人', w:'烏帽子', y:'えぼし', d:'奏者がかぶる黒い帽子。管絃では揉立烏帽子（もみたてえぼし）など。'},
+  {c:'装束と人', w:'楽座', y:'がくざ', d:'演奏するときの座り方。あぐらをかいて座る。'},
+  {c:'装束と人', w:'宮内庁式部職楽部', y:'くないちょうしきぶしょくがくぶ', d:'宮中の雅楽を受けつぐ演奏家の組織。'},
+];
+function glossHTML(q){ q=(q||'').trim(); const cats=[...new Set(GLOSS.map(x=>x.c))]; let n=0;
+  const html=cats.map(c=>{ const items=GLOSS.filter(x=>x.c===c && (!q || (x.w+x.y+x.d).includes(q)));
+    n+=items.length; if(!items.length) return '';
+    return `<div class="gcat">${c}</div>`+items.map(x=>`<details class="term"${q?' open':''}><summary><b>${x.w}</b><small>${x.y}</small></summary><p>${x.d}</p></details>`).join(''); }).join('');
+  return n? html : '<p class="gnone">見つかりませんでした</p>'; }
 $('#learnBtn').onclick=()=>{
-  openSheet(`${top('雅楽のしくみ','ががく')}<div class="learn">${LEARN.map((l,i)=>`<div class="card"><button class="h" aria-expanded="false"><span class="n">${NUM[i]}</span><span class="q">${l.q}</span><span class="chev">›</span></button><div class="b"><p>${l.p}</p><div class="acts">${l.a.map((a,j)=>`<button class="act" data-i="${i}" data-j="${j}">${PLAYI}${a[0]}</button>`).join('')}</div></div></div>`).join('')}</div>`);
+  openSheet(`${top('雅楽のしくみ','ががく')}<div class="tabs" role="tablist"><button role="tab" data-t="learn" class="on" aria-selected="true">しくみ</button><button role="tab" data-t="words" aria-selected="false">用語集</button></div>
+  <div class="pane" data-p="words" hidden><input class="gsearch" type="search" placeholder="ことばをさがす（例：舞楽、りょうおう）" aria-label="用語をさがす"><div class="glist">${glossHTML()}</div></div>
+  <div class="pane learn" data-p="learn">${LEARN.map((l,i)=>`<div class="card"><button class="h" aria-expanded="false"><span class="n">${NUM[i]}</span><span class="q">${l.q}</span><span class="chev">›</span></button><div class="b"><p>${l.p}</p><div class="acts">${l.a.map((a,j)=>`<button class="act" data-i="${i}" data-j="${j}">${PLAYI}${a[0]}</button>`).join('')}</div></div></div>`).join('')}</div>`);
   body.querySelectorAll('.card .h').forEach(h=>h.onclick=()=>{ const c=h.parentElement, o=!c.classList.contains('open'); c.classList.toggle('open',o); h.setAttribute('aria-expanded',o); });
   body.querySelectorAll('.act').forEach(b=>b.onclick=()=>{ switchSong('etenraku'); LEARN[+b.dataset.i].a[+b.dataset.j][1](); dlg.close(); });
   body.querySelector('.card').classList.add('open');
+  body.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ body.querySelectorAll('.tabs button').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',x===b); });
+    body.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.p!==b.dataset.t); });
+  const gs=body.querySelector('.gsearch'); gs.oninput=()=>{ body.querySelector('.glist').innerHTML=glossHTML(gs.value); };
 };
 $('#setBtn').onclick=()=>{
   openSheet(`${top('設定','せってい')}
