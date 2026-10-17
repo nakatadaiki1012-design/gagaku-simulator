@@ -751,7 +751,7 @@ function initThree(){
   planks.visible=false;
 
   const skin=M(0xe2c8ae,{roughness:.85}), hair=M(0x121214,{roughness:.6}), dark=M(0x2a2420,{roughness:.6});
-  const eboshiM=new THREE.MeshStandardMaterial({color:0x0b0b0d,roughness:.42,bumpMap:crease,bumpScale:.005});
+  const eboshiM=new THREE.MeshStandardMaterial({color:0x0b0b0d,roughness:.42,bumpMap:crease,bumpScale:.0022});
   const white=M(0xf3efe4,{roughness:.9}), wood=M(0x7a4f2c,{roughness:.5}), lac=M(0x1d1716,{roughness:.3}), lacRed=M(0x8e2a1c,{roughness:.35});
   const gold=M(0xc9a24a,{metalness:.75,roughness:.3}), silver=M(0xc8c8c4,{metalness:.8,roughness:.3}), bamboo=M(0xc9b27a,{roughness:.55});
   const kaba=M(0x3b2416,{roughness:.5}); // 樺巻（桜の皮を巻いた帯）
@@ -863,29 +863,41 @@ function initThree(){
     return out.copy(s).addScaledVector(_d,a).addScaledVector(_p,hgt); }
   // 直垂の大きな袖：腕から下に垂れる布
   const _u=new THREE.Vector3(), _up=new THREE.Vector3(), _n=new THREE.Vector3(), _m=new THREE.Matrix4();
-  function setSleeve(m,a,b){ _u.subVectors(b,a); const L=Math.max(.05,_u.length()); _u.normalize();
-    _up.set(0,1,0).addScaledVector(_u,-_u.y); if(_up.lengthSq()<.02) _up.set(0,0,1).addScaledVector(_u,-_u.z); _up.normalize(); _n.crossVectors(_u,_up);
-    _m.makeBasis(_u,_up,_n); m.quaternion.setFromRotationMatrix(_m); m.scale.set(L,1,1);
-    m.position.copy(a).addScaledVector(_u,L*.5).addScaledVector(_up,-.15); }
+  // 直垂の大袖：肩・肘・手首を通る線から、布がまっすぐ下へ垂れる。袖口のほうは丸く、ふくらみも少し
+  const SU=10, SV=6;
+  function makeSleeve(mat){ const g=new THREE.BufferGeometry(), pos=new Float32Array(SU*SV*3), uv=new Float32Array(SU*SV*2), idx=[];
+    for(let i=0;i<SU;i++) for(let j=0;j<SV;j++){ uv[(i*SV+j)*2]=i/(SU-1)*2; uv[(i*SV+j)*2+1]=j/(SV-1); }
+    for(let i=0;i<SU-1;i++) for(let j=0;j<SV-1;j++){ const a=i*SV+j, b=a+SV; idx.push(a,b,a+1, b,b+1,a+1); }
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.setAttribute('uv',new THREE.BufferAttribute(uv,2)); g.setIndex(idx);
+    const m=new THREE.Mesh(g,mat); m.castShadow=true; m.receiveShadow=true; m.frustumCulled=false; return m; }
+  const _a=new THREE.Vector3(), _q=new THREE.Vector3(), _o=new THREE.Vector3();
+  function setSleeve(m,s,e,h){
+    const pa=m.geometry.attributes.position, a=_a.lerpVectors(s,e,.3), L1=a.distanceTo(e), L2=e.distanceTo(h), L=L1+L2;
+    for(let i=0;i<SU;i++){ const u=i/(SU-1), d=u*L;
+      if(d<=L1) _q.lerpVectors(a,e,d/Math.max(1e-4,L1)); else _q.lerpVectors(e,h,(d-L1)/Math.max(1e-4,L2));
+      let depth=.31*(.4+.6*Math.sin(Math.min(1,u/.8)*Math.PI/2)); if(u>.82) depth*=Math.sqrt(Math.max(.06,1-Math.pow((u-.82)/.18,2)));
+      _o.set(_q.x,0,_q.z); if(_o.lengthSq()<1e-6) _o.set(1,0,0); _o.normalize();
+      for(let j=0;j<SV;j++){ const v=j/(SV-1), k=(i*SV+j)*3, bul=Math.sin(Math.PI*v)*.035*(.3+u);
+        pa.array[k]=_q.x+_o.x*bul; pa.array[k+1]=_q.y-depth*v-(v*v)*.01; pa.array[k+2]=_q.z+_o.z*bul; } }
+    pa.needsUpdate=true; m.geometry.computeVertexNormals(); }
 
-  const sleeveGeo=new THREE.BoxGeometry(1,.32,.07,6,4,1);
-  { const pa=sleeveGeo.attributes.position; for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i), k=.5-y/.32;
-      pa.setZ(i,pa.getZ(i)*(.3+.7*k)); if(y<0) pa.setY(i,y-.035*(1-4*x*x)); } sleeveGeo.computeVertexNormals(); }
+
   // 奏者の向き：+z（客席）を向く。奏者の右手は −x、左手は +x。
   const MOUTH=V(0,.905,.1);
   function figure(id,p,x,z,dest){
     const g=new THREE.Group(); g.position.set(x,0,z); (dest||scene).add(g);
     const robe=new THREE.MeshStandardMaterial({color:new THREE.Color(ROBE).convertSRGBToLinear(),map:weave,roughness:.55,metalness:.14,emissive:0x000000});
-    const hakama=new THREE.MeshStandardMaterial({color:new THREE.Color(ROBE).convertSRGBToLinear().multiplyScalar(.93),map:weave,bumpMap:pleat,bumpScale:.02,roughness:.6,metalness:.12,emissive:0x000000});
+    const hakama=new THREE.MeshStandardMaterial({color:new THREE.Color(ROBE).convertSRGBToLinear().multiplyScalar(.93),map:weave,bumpMap:pleat,bumpScale:.008,roughness:.6,metalness:.12,emissive:0x000000});
     // 一人ずつ少しちがう（顔色・体つき・烏帽子の高さ・首のかしげ方）
     const vr=()=>rnd()*2-1, mySkin=skin.clone(); mySkin.color.offsetHSL(vr()*.012,vr()*.05,vr()*.04);
     const body=new THREE.Group(); g.add(body); body.scale.setScalar(1+vr()*.03);
     // 楽座（あぐら）：長袴が床に広がる
-    mesh(new THREE.SphereGeometry(1,24,12),hakama,0,.07,.06,body).scale.set(.38,.09,.29);
-    [1,-1].forEach(s=>{ mesh(new THREE.SphereGeometry(.11,14,10),hakama,s*.27,.11,.17,body).scale.set(1.15,.75,1.1);
-      const th=limb(body,hakama,.095,.11); setLimb(th,V(s*.1,.15,.02),V(s*.27,.11,.17));
-      const sn=limb(body,hakama,.075); setLimb(sn,V(s*.27,.09,.2),V(-s*.08,.07,.27)); });
-    mesh(new THREE.SphereGeometry(1,20,10),hakama,0,.1,-.12,body).scale.set(.3,.11,.2);
+    { const lap=new THREE.LatheGeometry([[.44,0],[.435,.02],[.415,.07],[.37,.13],[.29,.175],[.17,.2],[0,.2]].map(([r,y])=>new THREE.Vector2(r,y)),48);
+      const pa=lap.attributes.position; for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i), z=pa.getZ(i), r=Math.hypot(x,z);
+        if(r<.05) continue; const th=Math.atan2(z,x), k=1+.045*Math.sin(th*9)*(1-y/.2);   // すそに放射状のひだ
+        pa.setX(i,x*k); pa.setZ(i,z*k); } lap.computeVertexNormals();
+      const lm=mesh(lap,hakama,0,0,.04,body); lm.scale.z=.8; }
+    [1,-1].forEach(s=>mesh(new THREE.SphereGeometry(.11,20,12),hakama,s*.25,.12,.15,body).scale.set(1.35,.6,1.05));   // ひざのふくらみ
     // 胴：直垂は肩が張り、胸から腰へまっすぐ落ちる
     const prof=[[0,.15],[.25,.16],[.24,.22],[.215,.32],[.205,.45],[.212,.6],[.215,.69],[.19,.75],[.12,.785],[.06,.8],[0,.805]].map(([r,y])=>new THREE.Vector2(r,y));
     const torso=mesh(new THREE.LatheGeometry(prof,24),robe,0,0,-.01,body); torso.scale.z=.8;
@@ -893,13 +905,17 @@ function initThree(){
     // 袴の腰紐（共布）と前の結び目
     const obi=mesh(new THREE.TorusGeometry(.206,.011,6,32),hakama,0,.31,-.01,body); obi.rotation.x=Math.PI/2; obi.scale.y=.8;
     [1,-1].forEach(s=>{ const kn=mesh(new THREE.SphereGeometry(.02,8,6),hakama,s*.024,.31,.166,body); kn.scale.set(1.5,.8,.7); });
+    [1,-1].forEach(s=>mesh(new THREE.SphereGeometry(.085,16,10),robe,s*.185,.725,0,body).scale.set(1.25,.75,1));   // 張った肩
     // 白い小袖の襟（Vの字）と胸紐・菊綴
     [1,-1].forEach(s=>{ const c=mesh(new THREE.BoxGeometry(.035,.25,.012),white,s*.045,.69,.135,body); c.rotation.z=s*.42; c.rotation.x=-.18;
       const k=mesh(new THREE.SphereGeometry(.018,8,6),white,s*.085,.56,.155,body); k.scale.set(1,1.4,1); });
     mesh(new THREE.CylinderGeometry(.05,.055,.07,12),white,0,.79,0,body);
+    const eriM=robe; [[-1,.012],[1,.02]].forEach(([s,dz])=>{ const a=V(s*.072,.79,.055), b=V(-s*.035,.47,.168+dz);     // 直垂の襟：奏者の左の襟が上
+      const eg=new THREE.Group(); eg.position.copy(a).lerp(b,.5); body.add(eg); eg.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(a,b,V(0,1,0))); eg.position.z+=.008;
+      const band=new THREE.Mesh(new THREE.BoxGeometry(.05,.016,a.distanceTo(b)),eriM); band.castShadow=true; eg.add(band); });
     // 首と顔（頭はグループにして、少しかしげる）
     mesh(new THREE.CylinderGeometry(.042,.046,.08,10),mySkin,0,.83,0,body);
-    const hd=new THREE.Group(); hd.position.set(0,.86,0); hd.rotation.set(.04+vr()*.05,vr()*.06,vr()*.04); body.add(hd);
+    const hd=new THREE.Group(); hd.position.set(0,.855,0); hd.scale.setScalar(1.08); hd.rotation.set(.04+vr()*.05,vr()*.06,vr()*.04); body.add(hd);
     const head=mesh(new THREE.SphereGeometry(.108,24,18),mySkin,0,.075,.005,hd); head.scale.set(.92,1.08,1);
     mesh(new THREE.SphereGeometry(.07,16,10),mySkin,0,.035,.04,hd).scale.set(1,.9,.95);        // あご・ほお
     mesh(new THREE.SphereGeometry(.11,18,12,Math.PI,Math.PI,0,Math.PI*.62),hair,0,.08,0,hd).scale.set(.94,1.08,1);
@@ -921,11 +937,13 @@ function initThree(){
 
     const sh={L:V(.21,.74,0),R:V(-.21,.74,0)};
     const up={L:limb(g,robe,.07,.075),R:limb(g,robe,.07,.075)}, fo={L:limb(g,robe,.06,.068),R:limb(g,robe,.06,.068)};
-    const sleeve={L:mesh(sleeveGeo,robe,0,0,0,g),R:mesh(sleeveGeo,robe,0,0,0,g)};
-    Object.values(sleeve).forEach(sl=>{ const hem=mesh(new THREE.BoxGeometry(1,.008,.07),white,0,-.155,0,sl); hem.castShadow=false; }); // 袖括りの緒
+    robe.side=THREE.DoubleSide;
+    const sleeve={L:makeSleeve(robe),R:makeSleeve(robe)}; g.add(sleeve.L); g.add(sleeve.R);
     const mkHand=s=>{ const hg=new THREE.Group(); g.add(hg);
       mesh(new THREE.BoxGeometry(.052,.024,.07),mySkin,0,0,.03,hg);                         // 手のひら
-      mesh(new THREE.BoxGeometry(.05,.02,.035),mySkin,0,-.008,.072,hg).rotation.x=.5;      // 曲げた指
+      [-.018,-.006,.006,.018].forEach((fx,k)=>{ const l=.03-Math.abs(k-1.5)*.004;                // 4本の指（少し曲げる）
+        const f1=limb(hg,mySkin,.0062,.0068); setLimb(f1,new THREE.Vector3(fx,.002,.06),new THREE.Vector3(fx,-.004,.06+l*.6));
+        const f2=limb(hg,mySkin,.0055,.006); setLimb(f2,new THREE.Vector3(fx,-.004,.06+l*.6),new THREE.Vector3(fx,-.02,.06+l)); });
       const th=mesh(new THREE.CylinderGeometry(.009,.011,.04,6),mySkin,s*.03,.004,.03,hg); th.rotation.set(Math.PI/2,0,s*.6); // 親指
       return hg; };
     const hand={L:mkHand(1),R:mkHand(-1)};
@@ -941,12 +959,12 @@ function initThree(){
     const part=(n,y,d,at)=>P.parts.push({n,y,d,at:at.clone()});
     const hole=(at,nrm,r=.0045)=>{ const h=mesh(new THREE.CircleGeometry(r,10),holeM,at.x,at.y,at.z,it); h.lookAt(at.clone().add(nrm)); h.position.addScaledVector(nrm,.0005); h.castShadow=false; };
     if(id==='sho'){ // 笙：お椀（頭）を両手で包み、17本の竹を顔の前に立てる
-      const c=V(0,.855,.17);
+      const c=V(0,.884,.178); // お椀の奥が唇にふれる高さ
       mesh(new THREE.CylinderGeometry(.062,.05,.07,24),lac,c.x,c.y,c.z,it);
       mesh(new THREE.TorusGeometry(.061,.004,6,24),gold,c.x,c.y+.035,c.z,it).rotation.x=Math.PI/2;
       mesh(new THREE.TorusGeometry(.051,.003,6,24),gold,c.x,c.y-.035,c.z,it).rotation.x=Math.PI/2;
       for(let i=0;i<6;i++){ const a=i/6*Math.PI*2; const mk=mesh(new THREE.SphereGeometry(.007,6,4),gold,c.x+Math.cos(a)*.058,c.y,c.z+Math.sin(a)*.058,it); mk.scale.y=.5; } // 蒔絵の飾り
-      tube(V(0,.862,.105),V(0,.862,.135),.013,silver); // 吹口（銀）
+      tube(V(0,.889,.108),V(0,.889,.122),.012,silver); // 吹口（銀）：唇にあてる
       // 17本の竹：正面に切れ目のある輪。左右に高い竹が「鳳凰の翼」のように立つ
       const HS=[.20,.26,.32,.40,.46,.44,.36,.30,.24,.30,.36,.44,.46,.40,.32,.26,.20];
       for(let i=0;i<17;i++){ const a=-Math.PI*.9+i/16*Math.PI*1.8, h=HS[i];
@@ -956,11 +974,11 @@ function initThree(){
       [.14,.25].forEach(y=>{ const band=mesh(new THREE.TorusGeometry(.0535,.0035,6,28),silver,c.x,c.y+y,c.z,it); band.rotation.x=Math.PI/2; });
       part('竹','たけ','長さのちがう17本の竹。根元に金属の簧（した）があり、息で鳴る。音が出るのは15本で、2本は鳴らない',V(.05,c.y+.36,c.z-.03));
       part('頭','かしら','竹を立てるお椀。漆塗りで、中に息をためる',V(c.x+.06,c.y,c.z+.02));
-      part('吹口','ふきぐち','ここに口をあて、吹いても吸っても鳴る。だから音を切らずに続けられる',V(0,.862,.11));
+      part('吹口','ふきぐち','ここに口をあて、吹いても吸っても鳴る。だから音を切らずに続けられる',V(0,.889,.11));
       part('帯','おび','竹を束ねる銀の輪',V(-.055,c.y+.25,c.z));
       part('指孔','ゆびあな','竹の下のほうの小さな穴。指でふさいだ竹だけが鳴る',V(-.045,c.y+.07,c.z+.03));
-      P.hold.L.set(.06,.84,.16); P.hold.R.set(-.06,.84,.16);
-      P.low={pos:V(0,-.37,.06),rot:new THREE.Euler(0,0,0)}; }
+      P.hold.L.set(.062,.864,.182); P.hold.R.set(-.062,.864,.182); // 両手でお椀を包む
+      P.low={pos:V(0,-.4,.06),rot:new THREE.Euler(0,0,0)}; }
     else if(id==='hichiriki'){ // 篳篥：口から斜め下へ
       const a=V(0,.895,.115), d=V(0,-.62,.78).normalize(), b=a.clone().addScaledVector(d,.21);
       tube(a.clone().addScaledVector(d,.02),b,.016,lac,.021);
@@ -1144,7 +1162,7 @@ function initThree(){
       P.halo.material.opacity = P.lv*.85;
       P.halo.scale.setScalar(1+P.lv*.08);
       // 構える／下ろす：休みの奏者や、まだ加わっていない奏者（音取の助管など）は楽器を膝に下ろす
-      const ready = on && !(me && P.id===me.id && P.p>0) && (!perf || pos===null || joined(P.id,P.p,pos+1.5));
+      const ready = P.solo || (on && !(me && P.id===me.id && P.p>0) && (!perf || pos===null || joined(P.id,P.p,pos+1.5)));
       P.lift += ((ready?1:0)-P.lift)*.07;
       const breath = Math.sin(clock*1.4+P.bob)*.005*(1+P.lv*2);
       P.body.position.y = breath; P.body.rotation.x = (1-P.lift)*.06;
@@ -1171,7 +1189,7 @@ function initThree(){
         const e=elbow(P.el[s],sh,h[s],s==='L'?1:-1);
         P.hand[s].quaternion.setFromUnitVectors(ZAX,v3.subVectors(h[s],e).normalize());
         setLimb(P.up[s],sh,e); setLimb(P.fo[s],e,h[s]);
-        setSleeve(P.sleeve[s],v3.lerpVectors(sh,e,.45),h[s]);
+        setSleeve(P.sleeve[s],sh,e,h[s]);
       }
       for(const s of P.sticks){ const hp=h[s.side], d=v3.subVectors(s.aim,hp); if(d.lengthSq()<1e-6) d.set(0,0,1); d.normalize();
         if(s.flat){ d.y+=.6; d.normalize(); }
@@ -1207,7 +1225,7 @@ function initThree(){
       zc.position.copy(c).add(new THREE.Vector3(.55,.42,1).normalize().multiplyScalar(d)); zctl.minDistance=d*.35; zctl.maxDistance=d*2.2; zctl.update(); }
     function show(id,h){
       ensure(); host=h; if(P) zs.remove(P.g);
-      P = figs[id] || (figs[id]=figure(id,0,0,0,zs)); zs.add(P.g);
+      P = figs[id] || (figs[id]=figure(id,0,0,0,zs)); P.solo=true; P.lift=1; zs.add(P.g);
       h.querySelector('.zstage').prepend(zcv);
       const L=h.querySelector('.zlabels'); L.innerHTML=''; lab=P.parts.map(pt=>{ const b=document.createElement('button'); b.className='zl'; b.innerHTML=`${pt.n}`;
         b.onclick=()=>{ lab.forEach(x=>x.el.classList.toggle('on',x.el===b)); h.querySelector('.zdesc').innerHTML=`<b>${pt.n}</b><small>${pt.y}</small>${pt.d}`; };
