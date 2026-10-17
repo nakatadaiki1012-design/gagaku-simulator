@@ -80,6 +80,18 @@ header .sp{flex:1}
 .jb-judge.show{opacity:1;transform:translate(-50%,0)} .jb-judge.good{color:var(--g)} .jb-judge.ok{color:var(--kin)} .jb-judge.bad{color:var(--muted)}
 .jb-x{position:absolute;top:-10px;right:-6px;width:28px;height:28px;border-radius:50%;background:var(--surface);border:1px solid var(--line);font-size:16px;line-height:1;box-shadow:var(--shadow)}
 .stagebox.joining .caption{bottom:118px}
+.zoom{display:grid;gap:8px}
+.zstage{position:relative;height:clamp(240px,42vh,360px);border-radius:16px;overflow:hidden;background:radial-gradient(120% 90% at 50% 15%,var(--sky1),var(--sky2));border:1px solid var(--line);touch-action:none}
+.zcv{position:absolute;inset:0;width:100%;height:100%;display:block}
+.zlabels{position:absolute;inset:0;pointer-events:none}
+.zl{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;font-family:var(--f-display);font-weight:700;font-size:12.5px;line-height:1;padding:4px 7px;border-radius:9px;
+  background:color-mix(in oklab,var(--surface) 86%,transparent);border:1px solid color-mix(in oklab,var(--g) 50%,var(--line));color:var(--ink);white-space:nowrap}
+.zl.on{background:var(--g);color:#fff;border-color:var(--g)}
+.zmode{position:absolute;left:8px;top:8px;display:flex;gap:4px}
+.zmode button{font-size:12px;padding:4px 10px;border-radius:14px;background:color-mix(in oklab,var(--surface) 85%,transparent);border:1px solid var(--line)}
+.zmode button.on{background:var(--g);color:#fff;border-color:var(--g)}
+.zdesc{margin:0;font-size:13px;color:var(--muted);line-height:1.6;min-height:2.6em}
+.zdesc b{color:var(--g);font-family:var(--f-display);font-size:15px;margin-right:6px} .zdesc small{margin-right:8px}
 .joinlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .jc{display:grid;gap:2px;text-align:left;padding:10px 12px;border-radius:14px;border:1px solid color-mix(in oklab,var(--g) 40%,var(--line));background:color-mix(in oklab,var(--g) 6%,var(--surface))}
 .jc b{font-family:var(--f-display);font-size:19px;color:var(--g)} .jc small{font-size:11px;color:var(--g)} .jc span{font-size:12px;color:var(--muted);line-height:1.45}
@@ -658,11 +670,19 @@ function initThree(){
   const cv=$('#gl'); if(!window.THREE){ $('#stagebox').insertAdjacentHTML('beforeend','<div class="nogl">3Dを読み込めませんでした。音と操作はそのまま使えます。</div>'); return; }
   let renderer; try{ renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}); }catch(e){ $('#stagebox').insertAdjacentHTML('beforeend','<div class="nogl">この端末では3Dを表示できません。音と操作はそのまま使えます。</div>'); return; }
   renderer.setPixelRatio(Math.min(2,devicePixelRatio||1)); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.outputEncoding=THREE.sRGBEncoding; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.12;
   const scene=new THREE.Scene();
+  // 映り込み用の環境（空の明るさと、左右の白い壁）。金や漆がそれらしく光る
+  const envMap=(()=>{ const es=new THREE.Scene(), c=document.createElement('canvas'); c.width=8; c.height=128; const x=c.getContext('2d'), g=x.createLinearGradient(0,0,0,128);
+    g.addColorStop(0,'#bcd0e0'); g.addColorStop(.48,'#f4efe4'); g.addColorStop(.55,'#8a7a66'); g.addColorStop(1,'#3a3028'); x.fillStyle=g; x.fillRect(0,0,8,128);
+    const tx=new THREE.CanvasTexture(c); tx.encoding=THREE.sRGBEncoding;
+    es.add(new THREE.Mesh(new THREE.SphereGeometry(10,32,16),new THREE.MeshBasicMaterial({map:tx,side:THREE.BackSide})));
+    [[-6,2,2],[6,3,-1],[0,6,4]].forEach(([a,b,d])=>{ const p=new THREE.Mesh(new THREE.PlaneGeometry(4,3),new THREE.MeshBasicMaterial({color:0xfff6e6,side:THREE.DoubleSide})); p.position.set(a,b,d); p.lookAt(0,0,0); es.add(p); });
+    const pm=new THREE.PMREMGenerator(renderer); const e=pm.fromScene(es,.04).texture; pm.dispose(); return e; })();
+  scene.environment=envMap;
   const camera=new THREE.PerspectiveCamera(32,1,.1,100);
-  const hemi=new THREE.HemisphereLight(0xfff6e8,0x404040,.75); scene.add(hemi);
-  const sun=new THREE.DirectionalLight(0xfff1dc,.95); sun.position.set(-4,10,7); sun.castShadow=true; sun.shadow.mapSize.set(1024,1024);
+  const hemi=new THREE.HemisphereLight(0xfff6e8,0x404040,.45); scene.add(hemi);
+  const sun=new THREE.DirectionalLight(0xfff1dc,.95); sun.position.set(-4,10,7); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048); sun.shadow.bias=-.0004;
   Object.assign(sun.shadow.camera,{left:-7,right:7,top:6,bottom:-6,near:1,far:30}); scene.add(sun);
   const fill=new THREE.DirectionalLight(0xdfe8ff,.25); fill.position.set(6,4,-4); scene.add(fill);
 
@@ -789,7 +809,7 @@ function initThree(){
       c.fillStyle=gr; c.fillRect(0,0,8,256); skyTex.needsUpdate=true;
       stars.visible=night; fires.forEach(f=>f.k.visible=night);
       lanterns.forEach(b=>b.material.emissive.set(night?0xffa850:0x000000).multiplyScalar(night?.9:0));
-      hemi.intensity=night?.16:.75; hemi.color.set(night?0x8a9ad0:0xfff6e8); sun.intensity=night?.42:.95; sun.color.set(night?0xffd2a0:0xfff1dc);
+      hemi.intensity=night?.12:.45; scene.environment=night?null:envMap; hemi.color.set(night?0x8a9ad0:0xfff6e8); sun.intensity=night?.42:.95; sun.color.set(night?0xffd2a0:0xfff1dc);
       fill.intensity=night?.12:.25; scene.fog=new THREE.Fog(night?0x0b0d18:0xdfe3e0,30,75);
       hillM.color.set(night?0x111622:0x6f8478).convertSRGBToLinear(); ground.material.color.set(night?0x3a3a44:0xffffff); this_night=night; }
     let this_night=false;
@@ -799,6 +819,12 @@ function initThree(){
   })();
 
   const V=(x,y,z)=>new THREE.Vector3(x,y,z);
+  const holeM=new THREE.MeshBasicMaterial({color:0x080605});
+  // 金の火焔（薄い板）：下が丸く、上が細くねじれる炎
+  const flameGeo=(()=>{ const s=new THREE.Shape(); s.moveTo(0,0); s.bezierCurveTo(.5,.05,.6,.45,.25,.7); s.bezierCurveTo(.35,.85,.15,.95,.05,1);
+    s.bezierCurveTo(.1,.8,-.05,.75,-.15,.62); s.bezierCurveTo(-.55,.45,-.5,.05,0,0);
+    const g=new THREE.ExtrudeGeometry(s,{depth:.06,bevelEnabled:true,bevelThickness:.02,bevelSize:.02,bevelSegments:1,curveSegments:10}); g.translate(0,0,-.03); return g; })();
+  function flame(par,x,y,rot,size){ const f=new THREE.Mesh(flameGeo,gold); f.position.set(x,y,0); f.rotation.z=rot; f.scale.setScalar(size); f.castShadow=true; par.add(f); return f; }
   function limb(parent,mat,r,r2){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r2||r,1,10),mat); m.castShadow=true; parent.add(m); return m; }
   function setLimb(m,a,b){ const d=new THREE.Vector3().subVectors(b,a), L=Math.max(1e-4,d.length()); m.position.copy(a).addScaledVector(d,.5); m.scale.set(1,L,1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.multiplyScalar(1/L)); }
   // 肘の位置（二関節の腕）
@@ -819,8 +845,8 @@ function initThree(){
       pa.setZ(i,pa.getZ(i)*(.3+.7*k)); if(y<0) pa.setY(i,y-.035*(1-4*x*x)); } sleeveGeo.computeVertexNormals(); }
   // 奏者の向き：+z（客席）を向く。奏者の右手は −x、左手は +x。
   const MOUTH=V(0,.905,.1);
-  function figure(id,p,x,z){
-    const g=new THREE.Group(); g.position.set(x,0,z); scene.add(g);
+  function figure(id,p,x,z,dest){
+    const g=new THREE.Group(); g.position.set(x,0,z); (dest||scene).add(g);
     const robe=new THREE.MeshStandardMaterial({color:new THREE.Color(ROBE).convertSRGBToLinear(),map:weave,roughness:.55,metalness:.14,emissive:0x000000});
     const hakama=new THREE.MeshStandardMaterial({color:new THREE.Color(ROBE).convertSRGBToLinear().multiplyScalar(.93),map:weave,bumpMap:pleat,bumpScale:.02,roughness:.6,metalness:.12,emissive:0x000000});
     // 一人ずつ少しちがう（顔色・体つき・烏帽子の高さ・首のかしげ方）
@@ -878,99 +904,157 @@ function initThree(){
     const knee={L:V(.24,.25,.2),R:V(-.24,.25,.2)};
     const it=new THREE.Group(); g.add(it);
     const P={id,p,g,body,robe,mats:[robe,hakama],it,sh,up,fo,sleeve,hand,knee,hold:{L:knee.L.clone(),R:knee.R.clone()},hands:{L:knee.L.clone(),R:knee.R.clone()},
-      el:{L:V(0,0,0),R:V(0,0,0)},sticks:[],low:null,lift:1,lv:0,bob:Math.random()*6};
+      el:{L:V(0,0,0),R:V(0,0,0)},sticks:[],parts:[],low:null,lift:1,lv:0,bob:Math.random()*6};
     const stick=(side,len,r,mat,knob)=>{ const s=limb(g,mat,r,r*1.2); let k=null; if(knob){ k=mesh(new THREE.SphereGeometry(r*2.2,10,8),mat,0,0,0,g); }
       P.sticks.push({side,m:s,k,len,aim:null}); return P.sticks[P.sticks.length-1]; };
     const tube=(a,b,r,mat,r2)=>{ const t=limb(it,mat,r,r2); setLimb(t,a,b); return t; };
 
+    // 部分の名前（拡大図で表示）：[名前, 読み, 説明, 位置（楽器の座標）]
+    const part=(n,y,d,at)=>P.parts.push({n,y,d,at:at.clone()});
+    const hole=(at,nrm,r=.0045)=>{ const h=mesh(new THREE.CircleGeometry(r,10),holeM,at.x,at.y,at.z,it); h.lookAt(at.clone().add(nrm)); h.position.addScaledVector(nrm,.0005); h.castShadow=false; };
     if(id==='sho'){ // 笙：お椀（頭）を両手で包み、17本の竹を顔の前に立てる
       const c=V(0,.855,.17);
-      const bowl=mesh(new THREE.CylinderGeometry(.062,.05,.07,20),lac,c.x,c.y,c.z,it);
+      mesh(new THREE.CylinderGeometry(.062,.05,.07,24),lac,c.x,c.y,c.z,it);
       mesh(new THREE.TorusGeometry(.061,.004,6,24),gold,c.x,c.y+.035,c.z,it).rotation.x=Math.PI/2;
-      tube(V(0,.86,.11),V(0,.865,.135),.012,lac);
-      for(let i=0;i<17;i++){ const a=-Math.PI*.9+i/16*Math.PI*1.8; // 正面に切れ目のある輪
-        const h=.2+.24*Math.pow(Math.abs(Math.sin(a/2+Math.PI/2*0)),.9)*(i%2?1:.86);
-        const px=c.x-Math.sin(a)*.046, pz=c.z-Math.cos(a)*.046; tube(V(px,c.y+.03,pz),V(px,c.y+.03+h,pz),.0075,bamboo); }
-      const band=mesh(new THREE.TorusGeometry(.05,.004,6,24),silver,c.x,c.y+.14,c.z,it); band.rotation.x=Math.PI/2;
+      mesh(new THREE.TorusGeometry(.051,.003,6,24),gold,c.x,c.y-.035,c.z,it).rotation.x=Math.PI/2;
+      for(let i=0;i<6;i++){ const a=i/6*Math.PI*2; const mk=mesh(new THREE.SphereGeometry(.007,6,4),gold,c.x+Math.cos(a)*.058,c.y,c.z+Math.sin(a)*.058,it); mk.scale.y=.5; } // 蒔絵の飾り
+      tube(V(0,.862,.105),V(0,.862,.135),.013,silver); // 吹口（銀）
+      // 17本の竹：正面に切れ目のある輪。左右に高い竹が「鳳凰の翼」のように立つ
+      const HS=[.20,.26,.32,.40,.46,.44,.36,.30,.24,.30,.36,.44,.46,.40,.32,.26,.20];
+      for(let i=0;i<17;i++){ const a=-Math.PI*.9+i/16*Math.PI*1.8, h=HS[i];
+        const px=c.x-Math.sin(a)*.046, pz=c.z-Math.cos(a)*.046; tube(V(px,c.y+.03,pz),V(px,c.y+.03+h,pz),.0072,bamboo);
+        mesh(new THREE.TorusGeometry(.0074,.0012,4,10),M(0x5a4220),px,c.y+.03+h*.55,pz,it).rotation.x=Math.PI/2;  // 竹の節
+        if(i%3===0) hole(V(px,c.y+.07,pz),V(-Math.sin(a),0,-Math.cos(a)),.0035); }
+      [.14,.25].forEach(y=>{ const band=mesh(new THREE.TorusGeometry(.0535,.0035,6,28),silver,c.x,c.y+y,c.z,it); band.rotation.x=Math.PI/2; });
+      part('竹','たけ','長さのちがう17本の竹。根元に金属の簧（した）があり、息で鳴る。音が出るのは15本で、2本は鳴らない',V(.05,c.y+.36,c.z-.03));
+      part('頭','かしら','竹を立てるお椀。漆塗りで、中に息をためる',V(c.x+.06,c.y,c.z+.02));
+      part('吹口','ふきぐち','ここに口をあて、吹いても吸っても鳴る。だから音を切らずに続けられる',V(0,.862,.11));
+      part('帯','おび','竹を束ねる銀の輪',V(-.055,c.y+.25,c.z));
+      part('指孔','ゆびあな','竹の下のほうの小さな穴。指でふさいだ竹だけが鳴る',V(-.045,c.y+.07,c.z+.03));
       P.hold.L.set(.06,.84,.16); P.hold.R.set(-.06,.84,.16);
       P.low={pos:V(0,-.37,.06),rot:new THREE.Euler(0,0,0)}; }
     else if(id==='hichiriki'){ // 篳篥：口から斜め下へ
       const a=V(0,.895,.115), d=V(0,-.62,.78).normalize(), b=a.clone().addScaledVector(d,.21);
       tube(a.clone().addScaledVector(d,.02),b,.016,lac,.021);
-      for(let i=1;i<8;i++){ const q=a.clone().addScaledVector(d,.02+i*.024); tube(q,q.clone().addScaledVector(d,.006),.0215,kaba); }
-      tube(a.clone().addScaledVector(d,-.015),a.clone().addScaledVector(d,.025),.006,M(0xb59a6a)); // 蘆舌
+      for(let i=1;i<9;i++){ const k=.02+i*.022, q=a.clone().addScaledVector(d,k), r=.016+.005*(k-.02)/.19+.0012; tube(q,q.clone().addScaledVector(d,.004),r,kaba); }
+      const up=V(0,.78,.62).normalize(); // 管の表側（上を向く面）
+      for(let i=0;i<7;i++) hole(a.clone().addScaledVector(d,.045+i*.022).addScaledVector(up,.0185),up);
+      tube(a.clone().addScaledVector(d,-.022),a.clone().addScaledVector(d,.024),.0065,M(0xb59a6a),.0075); // 蘆舌
+      const seme=mesh(new THREE.TorusGeometry(.0085,.0018,4,10),M(0x8a6a3a),0,0,0,it); seme.position.copy(a).addScaledVector(d,-.005); seme.lookAt(seme.position.clone().add(d)); // 責（せめ）
+      part('蘆舌','ろぜつ','葦（あし）でつくった大きなリード。口にくわえて吹く。唇の加減で音の高さを動かす（塩梅）',a.clone().addScaledVector(d,-.015));
+      part('管','かん','長さ約18cmの竹の管。漆を塗っている',a.clone().addScaledVector(d,.16));
+      part('指孔','ゆびあな','表に7つ、裏に2つ。ふさぐ穴で音の高さが変わる',a.clone().addScaledVector(d,.09).addScaledVector(up,.02));
+      part('樺巻','かばまき','桜の皮を細く巻いて、竹の割れを防ぐ',a.clone().addScaledVector(d,.2));
       P.hold.L.copy(a).addScaledVector(d,.08).add(V(0,0,.02)); P.hold.R.copy(a).addScaledVector(d,.17).add(V(0,0,.02));
       P.low={pos:V(0,-.33,.06),rot:new THREE.Euler(-.5,0,0)}; }
     else if(id==='ryuteki'){ // 龍笛：奏者の右側へ横に構える
       const a=V(.07,.895,.12), b=V(-.38,.85,.17);
       tube(a,b,.0155,lac);
-      const d=b.clone().sub(a).normalize();
-      for(let i=0;i<9;i++){ const q=a.clone().addScaledVector(d,.03+i*.048); tube(q,q.clone().addScaledVector(d,.008),.0165,kaba); }
-      tube(a.clone().addScaledVector(d,-.002),a.clone().addScaledVector(d,.02),.0165,lacRed);
+      const d=b.clone().sub(a).normalize(), up=V(0,1,0).addScaledVector(d,-d.y).normalize();
+      for(let i=0;i<14;i++){ const q=a.clone().addScaledVector(d,.03+i*.03); tube(q,q.clone().addScaledVector(d,.006),.0163,kaba); }
+      tube(a.clone().addScaledVector(d,-.002),a.clone().addScaledVector(d,.022),.0165,M(0xb8862b,{roughness:.5})); // 頭の錦
+      hole(a.clone().addScaledVector(d,.045).addScaledVector(up,.0158),up,.0055); // 歌口
+      for(let i=0;i<7;i++) hole(a.clone().addScaledVector(d,.17+i*.032).addScaledVector(up,.0158),up);
+      part('歌口','うたぐち','息を吹きこむ穴。唇を横にあてて吹く',a.clone().addScaledVector(d,.045).addScaledVector(up,.016));
+      part('指孔','ゆびあな','7つ。同じ指でも息を強めると高い音（責）が出る',a.clone().addScaledVector(d,.27).addScaledVector(up,.016));
+      part('樺巻','かばまき','竹に桜の皮を巻き、漆で固めてある',b.clone().addScaledVector(d,-.03));
+      part('頭','かしら','歌口の外側の端。錦などで飾る',a.clone().addScaledVector(d,.008));
       P.hold.L.copy(a).addScaledVector(d,.17).add(V(0,-.01,.02)); P.hold.R.copy(a).addScaledVector(d,.34).add(V(0,-.01,.02));
       P.low={pos:V(.05,-.36,.06),rot:new THREE.Euler(0,0,-.15)}; }
     else if(id==='biwa'){ // 楽琵琶：膝の上で横に寝かせ、首は左へ。右手に撥
       const bw=new THREE.Group(); bw.position.set(-.1,.5,.27); bw.rotation.set(-.28,0,-1.2); it.add(bw);
-      mesh(new THREE.SphereGeometry(.22,24,16),wood,0,0,-.01,bw).scale.set(1,1.4,.3);
-      mesh(new THREE.CylinderGeometry(.2,.2,.006,24),M(0x9a6a3c,{roughness:.6}),0,0,.055,bw).rotation.x=Math.PI/2;
-      mesh(new THREE.BoxGeometry(.21,.06,.02),dark,0,.06,.07,bw);                       // 撥面
-      mesh(new THREE.BoxGeometry(.16,.025,.03),dark,0,-.2,.065,bw);                     // 覆手
+      mesh(new THREE.SphereGeometry(.22,28,18),wood,0,0,-.01,bw).scale.set(1,1.4,.3);
+      mesh(new THREE.CylinderGeometry(.205,.205,.006,32),M(0x9a6a3c,{roughness:.6}),0,0,.055,bw).rotation.x=Math.PI/2;
+      mesh(new THREE.BoxGeometry(.22,.075,.008),M(0x2a1e18,{roughness:.4}),0,.06,.06,bw);                      // 撥面（革）
+      mesh(new THREE.BoxGeometry(.17,.03,.03),dark,0,-.2,.065,bw);                                             // 覆手
+      [[-.085,.15,1],[.085,.15,-1]].forEach(([x,y,s])=>{ const hm=mesh(new THREE.TorusGeometry(.022,.004,4,12,Math.PI),dark,x,y,.059,bw); hm.rotation.z=s>0?Math.PI*.5:-Math.PI*.5; }); // 半月
       mesh(new THREE.BoxGeometry(.075,.42,.05),wood,0,.48,.02,bw);
-      for(let i=0;i<4;i++) mesh(new THREE.BoxGeometry(.06,.012,.02),M(0xd9c79a),0,.33+i*.06,.05,bw); // 柱
+      for(let i=0;i<4;i++) mesh(new THREE.BoxGeometry(.065,.014,.03),M(0xd9c79a),0,.33+i*.065,.055,bw);   // 柱
       const hd=mesh(new THREE.BoxGeometry(.08,.17,.05),wood,0,.74,-.03,bw); hd.rotation.x=-1.0;
-      for(let i=0;i<4;i++){ const pg=mesh(new THREE.CylinderGeometry(.008,.008,.12,6),dark,0,.73+(i%2)*.04,-.03,bw); pg.rotation.z=Math.PI/2; }
-      for(let i=0;i<4;i++) mesh(new THREE.BoxGeometry(.0025,.9,.0025),M(0xf1ead6),-.03+i*.02,.27,.07,bw);
-      bw.updateMatrix();
-      P.hold.R.copy(V(.02,.0,.11).applyMatrix4(bw.matrix)); P.hold.L.copy(V(-.02,.6,.06).applyMatrix4(bw.matrix));
-      const b2=stick('R',.1,.012,dark); b2.flat=true; b2.aim=V(0,.08,.07).applyMatrix4(bw.matrix); P.pick=P.hold.R.clone(); }
+      for(let i=0;i<4;i++){ const pg=mesh(new THREE.CylinderGeometry(.008,.008,.13,6),dark,0,.71+(i%2)*.05,-.04+(i>1?-.03:0),bw); pg.rotation.z=Math.PI/2; }
+      for(let i=0;i<4;i++) mesh(new THREE.BoxGeometry(.0025+i*.0006,.9,.0025),M(0xf1ead6),-.03+i*.02,.27,.072,bw);
+      bw.updateMatrix(); const W=v=>v.applyMatrix4(bw.matrix);
+      P.hold.R.copy(W(V(.02,.0,.11))); P.hold.L.copy(W(V(-.02,.6,.06)));
+      const b2=stick('R',.12,.012,M(0x3a2a1e,{roughness:.5})); b2.flat=true; b2.aim=W(V(0,.08,.07)); P.pick=P.hold.R.clone();
+      part('撥','ばち','木の大きな撥。絃を低いほうからかき鳴らす',P.hold.R.clone().add(V(0,.04,.04)));
+      part('撥面','ばちめん','撥が当たる所に張った革',W(V(0,.06,.07)));
+      part('半月','はんげつ','響きを外に出す、三日月の形の穴',W(V(.085,.15,.06)));
+      part('覆手','ふくじゅ','絃の端を止める所',W(V(0,-.2,.08)));
+      part('柱','じゅう','4つの高いフレット。ここで絃を押さえて音を変える',W(V(0,.4,.07)));
+      part('絃','いと','4本。絹の糸',W(V(.02,.22,.075)));
+      part('転手','てんじゅ','絃を巻いて、音の高さを合わせるねじ',W(V(0,.74,-.02))); }
     else if(id==='koto'){ // 楽箏：右端（竜角側）に座り、楽器は左へのびる
       const k=new THREE.Group(); k.position.set(.5,.09,.44); k.rotation.y=.06; it.add(k);
-      const bd=mesh(new THREE.CylinderGeometry(.16,.16,1.45,24,1,false,-Math.PI*.42,Math.PI*.84),wood,0,0,0,k); bd.rotation.z=Math.PI/2; bd.scale.z=.85; bd.position.y=-.06;
+      const bd=mesh(new THREE.CylinderGeometry(.16,.16,1.45,32,1,false,-Math.PI*.42,Math.PI*.84),wood,0,0,0,k); bd.rotation.z=Math.PI/2; bd.scale.z=.85; bd.position.y=-.06;
       mesh(new THREE.BoxGeometry(1.45,.03,.26),wood,0,-.02,0,k);
       mesh(new THREE.BoxGeometry(.04,.03,.24),M(0xefe8d6),-.66,.11,0,k); mesh(new THREE.BoxGeometry(.04,.03,.24),M(0xefe8d6),.66,.11,0,k);
-      for(let i=0;i<13;i++){ const zz=-.1+i*.0167; mesh(new THREE.BoxGeometry(1.36,.0025,.0025),M(0xf1ead6),0,.125,zz,k);
-        mesh(new THREE.BoxGeometry(.016,.035,.014),M(0xefe8d6),-.18+((i*5)%13)*.055,.11,zz,k); }
+      const ivory=M(0xefe8d6);
+      for(let i=0;i<13;i++){ const zz=-.1+i*.0167, bx=-.18+((i*5)%13)*.055; mesh(new THREE.BoxGeometry(1.36,.0025,.0025),M(0xf1ead6),0,.125,zz,k);
+        [-1,1].forEach(s=>{ const lg=mesh(new THREE.BoxGeometry(.006,.04,.012),ivory,bx+s*.008,.105,zz,k); lg.rotation.z=s*.35; }); // 柱（人の字）
+        mesh(new THREE.BoxGeometry(.012,.006,.013),ivory,bx,.123,zz,k); }
       mesh(new THREE.BoxGeometry(.08,.02,.28),lacRed,-.73,.08,0,k);
-      k.updateMatrix();
-      P.hold.R.copy(V(-.48,.16,.02).applyMatrix4(k.matrix)); P.hold.L.copy(V(.05,.16,.0).applyMatrix4(k.matrix)); P.pick=P.hold.R.clone(); }
+      mesh(new THREE.BoxGeometry(.06,.05,.27),M(0x2a1e18),-.71,.03,0,k); mesh(new THREE.BoxGeometry(.06,.05,.27),M(0x2a1e18),.71,.03,0,k);
+      k.updateMatrix(); const W=v=>v.applyMatrix4(k.matrix);
+      P.hold.R.copy(W(V(-.48,.16,.02))); P.hold.L.copy(W(V(.05,.16,.0))); P.pick=P.hold.R.clone();
+      part('竜角','りゅうかく','手前の端で絃をのせる駒',W(V(-.66,.13,.12)));
+      part('柱','じ','13本の絃それぞれの下に立てる駒。「人」の字の形。動かして音の高さを合わせる',W(V(-.07,.13,.05)));
+      part('絃','いと','13本。絹の糸。右手の爪（つめ）で弾く',W(V(.3,.13,0)));
+      part('竜頭','りゅうとう','楽器の右の端。箏を竜にみたてた頭',W(V(-.74,.09,-.12)));
+      part('竜尾','りゅうび','左の端。竜のしっぽ',W(V(.7,.12,0))); }
     else if(id==='kakko'){ // 鞨鼓：台にのせ、両面を細い撥で打つ
       const st=new THREE.Group(); st.position.set(0,.33,.46); it.add(st);
-      const dr=mesh(new THREE.CylinderGeometry(.1,.1,.3,20),lacRed,0,0,0,st); dr.rotation.z=Math.PI/2;
-      [-.16,.16].forEach(x=>{ const h=mesh(new THREE.CylinderGeometry(.15,.15,.02,24),M(0xe8e1cf),x,0,0,st); h.rotation.z=Math.PI/2;
-        const r=mesh(new THREE.TorusGeometry(.15,.008,6,24),lac,x,0,0,st); r.rotation.y=Math.PI/2; });
-      for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; const c=limb(st,M(0xb04a2a),.004); setLimb(c,V(-.16,Math.cos(a)*.13,Math.sin(a)*.13),V(.16,Math.cos(a+.6)*.13,Math.sin(a+.6)*.13)); }
-      mesh(new THREE.BoxGeometry(.36,.04,.24),lac,0,-.14,0,st);
+      const dr=mesh(new THREE.CylinderGeometry(.095,.095,.3,24),lacRed,0,0,0,st); dr.rotation.z=Math.PI/2;
+      [-.16,.16].forEach(x=>{ const h=mesh(new THREE.CylinderGeometry(.15,.15,.018,32),M(0xe8e1cf,{roughness:.7}),x,0,0,st); h.rotation.z=Math.PI/2;
+        const r=mesh(new THREE.TorusGeometry(.15,.009,8,32),M(0x1a1a1a,{metalness:.5,roughness:.4}),x,0,0,st); r.rotation.y=Math.PI/2; });
+      const cord=M(0xd4682a,{roughness:.7});
+      for(let i=0;i<12;i++){ const a=i/12*Math.PI*2, a2=a+Math.PI/12; const c=limb(st,cord,.0035); setLimb(c,V(-.155,Math.cos(a)*.14,Math.sin(a)*.14),V(.155,Math.cos(a2)*.14,Math.sin(a2)*.14));
+        const c2=limb(st,cord,.0035); setLimb(c2,V(.155,Math.cos(a2)*.14,Math.sin(a2)*.14),V(-.155,Math.cos(a+Math.PI/6)*.14,Math.sin(a+Math.PI/6)*.14)); }
+      const tie=mesh(new THREE.TorusGeometry(.1,.006,6,24),cord,0,0,0,st); tie.rotation.y=Math.PI/2; // 調緒を締める中央の紐
+      mesh(new THREE.BoxGeometry(.36,.035,.24),lac,0,-.15,0,st); mesh(new THREE.BoxGeometry(.38,.012,.26),M(0xc9a24a,{metalness:.6,roughness:.35}),0,-.13,0,st);
       [-.15,.15].forEach(x=>[-.09,.09].forEach(zz=>mesh(new THREE.BoxGeometry(.03,.2,.03),lac,x,-.25,zz,st)));
       P.hold.L.set(.2,.48,.32); P.hold.R.set(-.2,.48,.32); P.strike={L:V(.17,.35,.46),R:V(-.17,.35,.46)};
-      stick('L',.25,.006,wood).aim=P.strike.L; stick('R',.25,.006,wood).aim=P.strike.R; }
-    else if(id==='taiko'){ // 楽太鼓（釣太鼓）：丸い枠に吊るし、前に座って打つ
+      stick('L',.25,.006,wood,true).aim=P.strike.L; stick('R',.25,.006,wood,true).aim=P.strike.R;
+      part('革','かわ','両面に張った革。左右とも撥で打つ',V(.17,.4,.52)); part('胴','どう','漆塗りの胴',V(0,.42,.55));
+      part('調緒','しらべお','革を締めるひも。締めぐあいで音が変わる',V(-.05,.47,.5)); part('撥','ばち','細い撥2本。連打の「来」と一打の「正」',V(-.22,.46,.36));
+      part('台','だい','鞨鼓をのせる台',V(0,.12,.55)); }
+    else if(id==='taiko'){ // 楽太鼓（釣太鼓）：火焔で飾った丸い枠に吊るし、前に座って打つ
       const fr=new THREE.Group(); fr.position.set(0,.8,.66); it.add(fr);
-      mesh(new THREE.TorusGeometry(.62,.045,10,48),lacRed,0,0,0,fr);
-      for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; const f=mesh(new THREE.ConeGeometry(.06,.18,6),gold,Math.cos(a)*.72,Math.sin(a)*.72,0,fr); f.rotation.z=a-Math.PI/2; }
-      mesh(new THREE.SphereGeometry(.07,12,10),gold,0,.8,0,fr);
-      const dr=mesh(new THREE.CylinderGeometry(.45,.45,.22,36),lacRed,0,0,0,fr); dr.rotation.x=Math.PI/2;
-      for(let i=0;i<24;i++){ const a=i/24*Math.PI*2; [-.1,.1].forEach(zz=>mesh(new THREE.SphereGeometry(.015,6,4),gold,Math.cos(a)*.45,Math.sin(a)*.45,zz,fr)); }
-      [[0,.62],[0,-.62],[.62,0],[-.62,0]].forEach(([a,b])=>{ const c=limb(fr,gold,.012); setLimb(c,V(a*.73,b*.73,0),V(a,b,0)); });
-      const face=mesh(new THREE.CircleGeometry(.42,40),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7,emissive:0x000000}),0,0,-.112,fr); face.rotation.y=Math.PI;
-      mesh(new THREE.CircleGeometry(.42,40),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7}),0,0,.112,fr);
-      mesh(new THREE.BoxGeometry(.08,.6,.08),lac,0,-.5,0,fr).position.y=-.98+.3; mesh(new THREE.BoxGeometry(.9,.08,.44),lac,0,-.76,0,fr);
+      mesh(new THREE.TorusGeometry(.6,.04,12,64),lac,0,0,0,fr); mesh(new THREE.TorusGeometry(.6,.012,6,64),lacRed,0,0,.04,fr);
+      mesh(new THREE.TorusGeometry(.64,.008,6,64),gold,0,0,0,fr);
+      for(let i=0;i<18;i++){ const a=i/18*Math.PI*2; flame(fr,Math.cos(a)*.66,Math.sin(a)*.66,a-Math.PI/2,i%2?.13:.18); } // 金の火焔
+      flame(fr,0,.85,0,.34); mesh(new THREE.SphereGeometry(.07,16,12),gold,0,.84,.02,fr).scale.y=1.25; // 宝珠
+      const dr=mesh(new THREE.CylinderGeometry(.45,.45,.22,48),lacRed,0,0,0,fr); dr.rotation.x=Math.PI/2;
+      for(let i=0;i<32;i++){ const a=i/32*Math.PI*2; [-.1,.1].forEach(zz=>mesh(new THREE.SphereGeometry(.014,6,4),gold,Math.cos(a)*.45,Math.sin(a)*.45,zz,fr)); }
+      [[0,.6],[.6,0],[-.6,0]].forEach(([a,b])=>{ const c=limb(fr,gold,.01); setLimb(c,V(a*.75,b*.75,0),V(a,b,0)); });
+      const face=mesh(new THREE.CircleGeometry(.42,48),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7,emissive:0x000000}),0,0,-.112,fr); face.rotation.y=Math.PI;
+      mesh(new THREE.CircleGeometry(.42,48),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7}),0,0,.112,fr);
+      mesh(new THREE.BoxGeometry(.08,.62,.08),lac,0,-.68,0,fr); mesh(new THREE.BoxGeometry(.9,.08,.44),lac,0,-.76,0,fr);
+      mesh(new THREE.BoxGeometry(.92,.02,.46),lacRed,0,-.715,0,fr);
       P.hold.L.set(.2,.62,.3); P.hold.R.set(-.2,.62,.3); P.strike={L:V(.12,.74,.55),R:V(-.1,.84,.55)}; P.face=face;
-      stick('L',.3,.012,wood,true).aim=P.strike.L; stick('R',.3,.012,wood,true).aim=P.strike.R; }
-    else if(id==='shoko'){ // 鉦鼓：枠に吊るした青銅の皿を2本の撥で打つ
+      stick('L',.3,.012,wood,true).aim=P.strike.L; stick('R',.3,.012,wood,true).aim=P.strike.R;
+      part('鼓面','こめん','牛の革。色あざやかな模様が描かれる。右の桴で強く「百」、左で弱く「図」',V(.25,.95,.54));
+      part('火焔','かえん','枠のまわりを飾る金の炎',V(-.6,1.25,.68)); part('宝珠','ほうじゅ','いちばん上の玉',V(0,1.66,.68));
+      part('枠','わく','太鼓をつるす円い枠',V(.62,.55,.68)); part('桴','ばち','先の丸い桴2本',V(-.25,.66,.36)); part('台','だい','枠を立てる台',V(.35,.05,.7)); }
+    else if(id==='shoko'){ // 鉦鼓：火焔で飾った枠に吊るした青銅の皿を、2本の撥で打つ
       const fr=new THREE.Group(); fr.position.set(0,.38,.46); it.add(fr);
-      const ring=mesh(new THREE.TorusGeometry(.24,.025,8,36),lacRed,0,.02,0,fr);
-      for(let i=0;i<10;i++){ const a=i/10*Math.PI*2; const f=mesh(new THREE.ConeGeometry(.025,.07,5),gold,Math.cos(a)*.28,.02+Math.sin(a)*.28,0,fr); f.rotation.z=a-Math.PI/2; }
+      mesh(new THREE.TorusGeometry(.24,.02,8,40),lac,0,.02,0,fr); mesh(new THREE.TorusGeometry(.24,.007,6,40),lacRed,0,.02,.02,fr);
+      for(let i=0;i<12;i++){ const a=i/12*Math.PI*2; flame(fr,Math.cos(a)*.27,.02+Math.sin(a)*.27,a-Math.PI/2,i%2?.06:.08); }
+      flame(fr,0,.36,0,.13); mesh(new THREE.SphereGeometry(.03,12,10),gold,0,.355,.01,fr);
       [-.18,.18].forEach(x=>mesh(new THREE.BoxGeometry(.03,.3,.03),lac,x,-.24,0,fr)); mesh(new THREE.BoxGeometry(.5,.035,.2),lac,0,-.38,0,fr);
-      const d=mesh(new THREE.CylinderGeometry(.12,.1,.04,28,1,true),gold,0,.02,.0,fr); d.rotation.x=Math.PI/2; d.material=d.material.clone(); d.material.side=THREE.DoubleSide;
-      mesh(new THREE.CircleGeometry(.1,28),d.material,0,.02,-.02,fr).rotation.y=Math.PI;
+      const bronze=M(0xb08a3a,{metalness:.85,roughness:.35});
+      const d=mesh(new THREE.CylinderGeometry(.12,.1,.04,36,1,true),bronze,0,.02,.0,fr); d.rotation.x=Math.PI/2; d.material=d.material.clone(); d.material.side=THREE.DoubleSide;
+      mesh(new THREE.CircleGeometry(.1,36),d.material,0,.02,-.02,fr).rotation.y=Math.PI;
+      [-1,1].forEach(s=>{ const c=limb(fr,M(0xd4682a),.003); setLimb(c,V(s*.1,.1,0),V(s*.17,.19,0)); });
       P.hold.L.set(.12,.44,.3); P.hold.R.set(-.12,.44,.3); P.strike={L:V(.02,.38,.43),R:V(-.04,.42,.43)}; P.dish=d;
-      stick('L',.22,.006,wood,true).aim=P.strike.L; stick('R',.22,.006,wood,true).aim=P.strike.R; }
+      stick('L',.22,.006,wood,true).aim=P.strike.L; stick('R',.22,.006,wood,true).aim=P.strike.R;
+      part('鉦','かね','青銅の皿。内側を撥で打つ。左が「チ」、右が「チン」',V(.06,.4,.45)); part('火焔','かえん','枠を飾る金の炎',V(.24,.64,.46));
+      part('枠','わく','鉦をつるす円い枠',V(-.25,.45,.46)); part('撥','ばち','先に玉のついた撥2本',V(-.16,.47,.33)); part('台','だい','枠を立てる台',V(0,.02,.52)); }
     P.hands.L.copy(P.hold.L); P.hands.R.copy(P.hold.R);
     // 光の輪
     const halo=new THREE.Mesh(new THREE.RingGeometry(.52,.68,48),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false}));
     halo.rotation.x=-Math.PI/2; halo.position.y=.012; g.add(halo); P.halo=halo;
     g.traverse(o=>{ if(o.isMesh) o.userData.player=P; });
-    players.push(P); return P;
+    if(!dest) players.push(P); return P;
   }
   function tomoeTex(){ const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
     x.fillStyle='#efe6d2'; x.fillRect(0,0,256,256); x.translate(128,128);
@@ -1023,10 +1107,8 @@ function initThree(){
     const hitm=ray.intersectObjects(scene.children,true).find(h=>h.object.userData.player); if(hitm) toggle(hitm.object.userData.player.id); });
 
   const ZAX=new THREE.Vector3(0,0,1), v3=new THREE.Vector3(), tmpA=new THREE.Vector3(), tmpB=new THREE.Vector3(), tmpC=new THREE.Vector3();
-  three={ render(now,lvs,hitsNow,clock,pos){
-    if(viewTween){ viewTween.t=Math.min(1,viewTween.t+.045); const e=1-Math.pow(1-viewTween.t,3); camera.position.lerpVectors(viewTween.from,viewTween.to,e); if(viewTween.t>=1) viewTween=null; }
-    controls.update();
-    for(const P of players){
+  // 奏者1人分の動き（舞台の16人と、拡大図の奏者で共通）
+  function updateP(P,lvs,hitsNow,now,clock,pos){
       const on=state.on[P.id], target = on ? (lvs[P.id+P.p]||0) : 0;
       P.lv += (target-P.lv)*.18;
       const c=groupColor(P.id);
@@ -1066,17 +1148,72 @@ function initThree(){
       for(const s of P.sticks){ const hp=h[s.side], d=v3.subVectors(s.aim,hp); if(d.lengthSq()<1e-6) d.set(0,0,1); d.normalize();
         if(s.flat){ d.y+=.6; d.normalize(); }
         const tip=tmpC.copy(hp).addScaledVector(d,s.len); setLimb(s.m,hp,tip); if(s.k) s.k.position.copy(tip); }
+      }
+  // ---- 拡大図：楽器ひとつ（または奏者ごと）を別の画面で、回して見られる ----
+  const zoom=(()=>{
+    let zr=null, zs, zc, zctl, zcv, host=null, P=null, mode='inst', lab=[], open=false;
+    const figs={};
+    function ensure(){
+      if(zr) return;
+      zcv=document.createElement('canvas'); zcv.className='zcv';
+      zr=new THREE.WebGLRenderer({canvas:zcv,antialias:true,alpha:true}); zr.setClearColor(0,0); zr.setPixelRatio(Math.min(2,devicePixelRatio||1));
+      zr.outputEncoding=THREE.sRGBEncoding; zr.toneMapping=renderer.toneMapping; zr.toneMappingExposure=renderer.toneMappingExposure;
+      zr.shadowMap.enabled=true; zr.shadowMap.type=THREE.PCFSoftShadowMap;
+      zs=new THREE.Scene(); zs.environment=envMap;
+      zs.add(new THREE.HemisphereLight(0xfff6e8,0x3a3430,.45));
+      const key=new THREE.DirectionalLight(0xfff1dc,1.1); key.position.set(-2,4,3); key.castShadow=true; key.shadow.mapSize.set(1024,1024);
+      Object.assign(key.shadow.camera,{left:-1.5,right:1.5,top:1.5,bottom:-1.5,near:.5,far:12}); zs.add(key);
+      const rim=new THREE.DirectionalLight(0xdfe8ff,.45); rim.position.set(3,2,-3); zs.add(rim);
+      const fl=new THREE.Mesh(new THREE.CircleGeometry(1.6,48),floor.material); fl.rotation.x=-Math.PI/2; fl.receiveShadow=true; zs.add(fl);
+      zc=new THREE.PerspectiveCamera(30,1,.01,40);
+      zctl=new THREE.OrbitControls(zc,zcv); zctl.enableDamping=true; zctl.dampingFactor=.08; zctl.enablePan=false; zctl.autoRotate=true; zctl.autoRotateSpeed=1.1;
+      zctl.minPolarAngle=.15; zctl.maxPolarAngle=1.5;
+      zcv.addEventListener('pointerdown',()=>{ zctl.autoRotate=false; });
     }
+    function setMode(m){ mode=m; if(!P) return; const inst=m==='inst';
+      [P.body,P.hand.L,P.hand.R,P.up.L,P.up.R,P.fo.L,P.fo.R,P.sleeve.L,P.sleeve.R].forEach(o=>o.visible=!inst); P.halo.visible=false;
+      P.sticks.forEach(s=>{ s.m.visible=!inst; if(s.k) s.k.visible=!inst; });
+      host.querySelectorAll('.zmode button').forEach(b=>b.classList.toggle('on',b.dataset.z===m)); fit(); }
+    function fit(){ zs.updateMatrixWorld(true); const box=new THREE.Box3().setFromObject(mode==='inst'?P.it:P.g), c=box.getCenter(new THREE.Vector3()), s=box.getSize(new THREE.Vector3());
+      const R=Math.max(s.x,s.y,s.z)*.5; zctl.target.copy(c); const d=R/Math.sin(zc.fov*Math.PI/360)*1.05;
+      zc.position.copy(c).add(new THREE.Vector3(.55,.42,1).normalize().multiplyScalar(d)); zctl.minDistance=d*.35; zctl.maxDistance=d*2.2; zctl.update(); }
+    function show(id,h){
+      ensure(); host=h; if(P) zs.remove(P.g);
+      P = figs[id] || (figs[id]=figure(id,0,0,0,zs)); zs.add(P.g);
+      h.querySelector('.zstage').prepend(zcv);
+      const L=h.querySelector('.zlabels'); L.innerHTML=''; lab=P.parts.map(pt=>{ const b=document.createElement('button'); b.className='zl'; b.innerHTML=`${pt.n}`;
+        b.onclick=()=>{ lab.forEach(x=>x.el.classList.toggle('on',x.el===b)); h.querySelector('.zdesc').innerHTML=`<b>${pt.n}</b><small>${pt.y}</small>${pt.d}`; };
+        L.appendChild(b); return {el:b,pt}; });
+      h.querySelectorAll('.zmode button').forEach(b=>b.onclick=()=>setMode(b.dataset.z));
+      zctl.autoRotate=true; open=true; resize(); setMode('inst'); }
+    function resize(){ const r=zcv.getBoundingClientRect(); if(!r.width) return false; if(zcv.width!==Math.round(r.width*zr.getPixelRatio())){ zr.setSize(r.width,r.height,false); zc.aspect=r.width/r.height; zc.updateProjectionMatrix(); } return true; }
+    const pv=new THREE.Vector3(), cd=new THREE.Vector3();
+    function render(lvs,hitsNow,now,clock,pos){
+      if(!open || !resize()) return;
+      updateP(P,lvs,hitsNow,now,clock,pos); P.halo.visible=false;
+      zctl.update(); zr.render(zs,zc);
+      const r=zcv.getBoundingClientRect(); zc.getWorldDirection(cd);
+      lab.forEach(({el,pt})=>{ pv.copy(pt.at); P.it.localToWorld(pv); const behind=pv.clone().sub(zc.position).dot(cd)<0; pv.project(zc);
+        el.style.left=((pv.x+1)/2*r.width)+'px'; el.style.top=((1-pv.y)/2*r.height)+'px'; el.style.display=behind||Math.abs(pv.x)>1.05||Math.abs(pv.y)>1.05||(mode==='inst'&&/^(撥|桴)$/.test(pt.n))?'none':''; });
+    }
+    function close(){ open=false; }
+    return {show,close,render};
+  })();
+  three={ render(now,lvs,hitsNow,clock,pos){
+    if(viewTween){ viewTween.t=Math.min(1,viewTween.t+.045); const e=1-Math.pow(1-viewTween.t,3); camera.position.lerpVectors(viewTween.from,viewTween.to,e); if(viewTween.t>=1) viewTween=null; }
+    controls.update();
+    for(const P of players) updateP(P,lvs,hitsNow,now,clock,pos);
     for(const r of ripples){ if(!r.on) continue; r.t+=1/60; const k=r.t/1.1; if(k>=1){ r.on=false; r.m.material.opacity=0; continue; }
       r.m.scale.setScalar(.6+k*1.6*(.6+r.s*.6)); r.m.material.opacity=(1-k)*.55*r.s; }
     bg.tick(clock);
     renderer.render(scene,camera);
+    zoom.render(lvs,hitsNow,now,clock,pos);
     // ラベル位置
     const r=cv.getBoundingClientRect();
     Object.keys(labels).forEach(id=>{ const ps=players.filter(q=>q.id===id); const ax=ps.reduce((s,q)=>s+q.g.position.x,0)/ps.length, z0=ps[0].g.position.z; v3.set(ax,.02,z0+(z0<0?.95:z0<1.5?.95:1.05)).project(camera);
       const b=labels[id]; b.style.left=((v3.x+1)/2*r.width)+'px'; b.style.top=((1-v3.y)/2*r.height)+'px';
       const lv=Math.max(...players.filter(q=>q.id===id).map(q=>q.lv)); b.style.setProperty('--lv',lv.toFixed(2)); b.classList.toggle('off',!state.on[id]); });
-  }, ripple, players };
+  }, ripple, players, zoom };
 }
 
 /* ============================================================
@@ -1203,6 +1340,7 @@ function frame(ms){
    7. シート
    ============================================================ */
 const dlg=$('#dlg'), body=$('#dlgBody');
+dlg.addEventListener('close',()=>{ if(three) three.zoom.close(); });
 function openSheet(html,color){ body.innerHTML=html; body.style.setProperty('--g',color||'var(--kin)'); dlg.showModal(); body.querySelector('.x').onclick=()=>dlg.close(); body.scrollTop=0; }
 dlg.addEventListener('click',e=>{ if(e.target===dlg) dlg.close(); });
 dlg.addEventListener('close',()=>padStopAll());
@@ -1229,9 +1367,12 @@ function openInst(id){
   else { label='打ってみる'; pads=`<button class="pad wide" data-k="chi"><b>チ</b><small>左</small></button><button class="pad wide" data-k="chin"><b>チン</b><small>右</small></button>`; }
   const enb = id==='hichiriki' ? `<div class="sw"><div class="t"><span>塩梅</span><small>音を下からすくい上げる</small></div><button class="tog" id="enbT" role="switch" aria-checked="true" aria-label="塩梅"></button></div>` : '';
   openSheet(`${top(I.k,I.y,`<div style="margin-top:6px"><span class="tag">${G.k}・${I.role}・${I.n}人</span></div>`)}
+    ${three?`<div class="zoom"><div class="zstage"><div class="zlabels"></div><div class="zmode"><button data-z="inst" class="on">楽器</button><button data-z="player">奏者ごと</button></div></div>
+      <p class="zdesc">名前をタップすると説明が出ます。指でまわす・ひろげると近くで見られます</p></div>`:''}
     <p class="lead">${I.lead}</p>
     <div class="padlabel">${label}</div><div class="pads">${pads}</div>${enb}
     ${I.more.map(([h,t])=>`<details><summary>${h}</summary><p>${t}</p></details>`).join('')}`, `var(${G.tok})`);
+  if(three) three.zoom.show(id,body.querySelector('.zoom'));
   const spb=60/state.bpm;
   if(id==='hichiriki'){ const t=$('#enbT'); t.onclick=()=>t.setAttribute('aria-checked', t.getAttribute('aria-checked')!=='true'); }
   body.querySelectorAll('.pad').forEach(p=>{
