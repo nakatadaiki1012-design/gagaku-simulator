@@ -765,6 +765,10 @@ function initThree(){
   // ---- 質感（布・漆・木目）はキャンバスで描いた小さな模様を貼る ----
   function canvasTex(w,h,draw,rep){ const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d'),w,h);
     const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; if(rep) t.repeat.set(rep[0],rep[1]); t.anisotropy=4; return t; }
+  // 写真の質感（assets/ の中。利用者が画像生成で作ったもの）。読み込めないときは、下で描く模様のまま
+  const texLoader=new THREE.TextureLoader(), photoCache={};
+  function photo(url,rep,cb){ const key=url+(rep||''); if(photoCache[key]){ photoCache[key].then(cb); return; }
+    photoCache[key]=new Promise(res=>texLoader.load(url,t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; if(rep) t.repeat.set(rep[0],rep[1]); t.anisotropy=8; t.encoding=THREE.sRGBEncoding; res(t); },undefined,()=>{})); photoCache[key].then(cb); }
   const rnd=(()=>{ let s=7; return ()=>(s=(s*16807)%2147483647)/2147483647; })();
   // 精好織の細かな織り目（玉虫色の直垂）
   const weave=canvasTex(128,128,(x,w,h)=>{ x.fillStyle='#d8d8d8'; x.fillRect(0,0,w,h);
@@ -785,6 +789,7 @@ function initThree(){
       x.fillStyle='rgba(40,22,10,.55)'; x.fillRect(i*pw,0,2,h); } });
   boards.encoding=THREE.sRGBEncoding;
   floor.material=new THREE.MeshStandardMaterial({map:boards,roughness:.6,color:new THREE.Color(0xb39a84).convertSRGBToLinear()});
+  photo('assets/floor.jpg',[1.85,1],t=>{ floor.material.map=t; floor.material.color.set(0xd6c6b2); floor.material.needsUpdate=true; });
   planks.visible=false;
 
   const skin=M(0xe2c8ae,{roughness:.85}), hair=M(0x121214,{roughness:.6}), dark=M(0x2a2420,{roughness:.6});
@@ -817,6 +822,7 @@ function initThree(){
     const sand=new THREE.CanvasTexture(gC), sandB=new THREE.CanvasTexture(gB);
     [sand,sandB].forEach(x=>{ x.wrapS=x.wrapT=THREE.RepeatWrapping; x.repeat.set(48,48); x.anisotropy=8; }); sand.encoding=THREE.sRGBEncoding;
     const ground=add(new THREE.CircleGeometry(60,64),new THREE.MeshStandardMaterial({map:sand,bumpMap:sandB,bumpScale:.035,roughness:.92}),0,GY,0); ground.rotation.x=-Math.PI/2;
+    photo('assets/gravel.jpg',[40,40],t=>{ ground.material.map=t; ground.material.bumpMap=t; ground.material.bumpScale=.02; ground.material.color.set(0x9e9a92); ground.material.needsUpdate=true; });
     // 舞台のまわりの縁石（正面の階段の前はあける）
     const granite=[0x8f8b84,0x9a958c,0x837f78,0xa29d93].map(c=>M(c,{roughness:.95}));
     const curb=(x0,z0,x1,z1)=>{ const L=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.round(L/.62)), ang=Math.atan2(z1-z0,x1-x0);
@@ -839,12 +845,18 @@ function initThree(){
       x.fillStyle='#efe9dc'; x.fillRect(0,0,w,22); for(let i=12;i<w;i+=48){ x.fillRect(i,22,14,16); } x.fillStyle='#d9cbe6'; x.fillRect(0,h*.45,w,3); });
     makuT.encoding=THREE.sRGBEncoding; makuT.wrapS=THREE.ClampToEdgeWrapping;
     const mg=new THREE.PlaneGeometry(11.2,2.75,160,1); { const pa=mg.attributes.position; for(let i=0;i<pa.count;i++) pa.setZ(i,.045*Math.sin(pa.getX(i)*9)); mg.computeVertexNormals(); }
-    add(mg,new THREE.MeshStandardMaterial({map:makuT,roughness:.7,side:THREE.DoubleSide}),0,1.42,-2.92);
+    const maku=add(mg,new THREE.MeshStandardMaterial({map:makuT,roughness:.7,side:THREE.DoubleSide}),0,1.42,-2.92);
+    photo('assets/maku.jpg',null,t=>{ const c=document.createElement('canvas'); c.width=2048; c.height=512; const x=c.getContext('2d');
+      for(let i=0;i<4;i++) x.drawImage(t.image,i*512,0,512,512);
+      x.fillStyle='#efe9dc'; x.fillRect(0,0,2048,44); for(let i=24;i<2048;i+=96) x.fillRect(i,44,28,32);
+      const nt=new THREE.CanvasTexture(c); nt.encoding=THREE.sRGBEncoding; nt.wrapS=THREE.ClampToEdgeWrapping; nt.anisotropy=8; maku.material.map=nt; maku.material.needsUpdate=true; });
     // 御簾と帽額、総角の房
     const misuT=canvasTex(256,256,(x,w,h)=>{ x.fillStyle='#b99b62'; x.fillRect(0,0,w,h); for(let y=0;y<h;y+=4){ x.fillStyle=y%8?'rgba(80,55,20,.35)':'rgba(255,240,200,.25)'; x.fillRect(0,y,w,1.5); }
       x.fillStyle='rgba(60,30,20,.6)'; [w*.2,w*.5,w*.8].forEach(v=>x.fillRect(v,0,2,h)); },[6,1]);
     misuT.encoding=THREE.sRGBEncoding;
-    [-3.8,0,3.8].forEach(x=>{ add(new THREE.BoxGeometry(3.4,1.1,.02),new THREE.MeshStandardMaterial({map:misuT,roughness:.8}),x,3.85,-2.98);
+    const misuM=new THREE.MeshStandardMaterial({map:misuT,roughness:.8});
+    photo('assets/misu.jpg',[1,1],t=>{ misuM.map=t; misuM.needsUpdate=true; });
+    [-3.8,0,3.8].forEach(x=>{ add(new THREE.BoxGeometry(3.4,1.1,.02),misuM,x,3.85,-2.98);
       add(new THREE.BoxGeometry(3.4,.18,.03),M(0x3d2350,{roughness:.6}),x,4.33,-2.96);
       [-1.3,1.3].forEach(dx=>{ add(new THREE.SphereGeometry(.07,10,8),M(0xc23b2b),x+dx,3.55,-2.93); add(new THREE.ConeGeometry(.05,.4,8),M(0xc23b2b),x+dx,3.3,-2.93).rotation.x=Math.PI; }); });
     // 檜皮葺の軒と垂木
@@ -859,8 +871,10 @@ function initThree(){
     const hillM=M(0x5d7468,{roughness:1});
     [[-30,-42,22,7],[2,-48,26,9],[34,-40,20,6],[-50,-20,18,6],[52,-18,18,6]].forEach(([x,z,r,h])=>{ const m=add(new THREE.SphereGeometry(r,20,10,0,Math.PI*2,0,Math.PI/2),hillM,x,GY,z); m.scale.y=h/r; });
     // 松
+    const needleM=M(0x2f4a33,{roughness:.9});
+    photo('assets/pine.jpg',[2,1],t=>{ needleM.map=t; needleM.color.set(0xc8d4c0); needleM.needsUpdate=true; });
     function pine(x,z,s,lean){ const p=new THREE.Group(); p.position.set(x,GY,z); p.scale.setScalar(s); G.add(p);
-      const bark=M(0x4b3a2e,{roughness:1}), nd=M(0x2f4a33,{roughness:.9});
+      const bark=M(0x4b3a2e,{roughness:1}), nd=needleM;
       const tr=add(new THREE.CylinderGeometry(.12,.22,4.2,8),bark,0,2.1,0,p,true); tr.rotation.z=lean;
       [[-.2,3.9,0,1.3],[.9,3.1,.2,1.1],[-1.0,2.6,-.1,1.0],[.4,4.6,-.1,.9],[1.4,2.2,.3,.8]].forEach(([a,b,c,r])=>{ const cx=a+Math.sin(-lean)*b;
         const br=limb(p,bark,.05); setLimb(br,new THREE.Vector3(Math.sin(-lean)*b,b-.3,0),new THREE.Vector3(cx,b,c));
@@ -876,12 +890,14 @@ function initThree(){
       for(let i=0;i<16;i++){ const a=rnd()*7, h=1.7+rnd()*1.1, d=.3+rnd()*.9; const f=add(new THREE.SphereGeometry(.42+rnd()*.25,12,8),cols[i%5],Math.cos(a)*d,h,Math.sin(a)*d,p,true); f.scale.y=.7; } }
     maple(-12.5,-.5,1); maple(12.8,.8,.95);
     // 竹垣（四ツ目垣）：庭の左右の奥
-    const bambooM=M(0xb8a36a,{roughness:.7}), postM=M(0x6b5636,{roughness:.9});
+    const bambooM=M(0xb8a36a,{roughness:.7}), postM=M(0x6b5636,{roughness:.9}), fenceG=new THREE.Group(); G.add(fenceG);
+    photo('assets/fence.png',[11,1],t=>{ fenceG.visible=false; const fm=new THREE.MeshStandardMaterial({map:t,transparent:true,alphaTest:.5,side:THREE.DoubleSide,roughness:.8});
+      [-15,15].forEach(x=>{ const f=add(new THREE.PlaneGeometry(16,1.6),fm,x,GY+.8,-1,null,true); f.rotation.y=x<0?Math.PI/2:-Math.PI/2; }); });
     [-15,15].forEach(x=>{ const z0=-9, z1=7;
-      for(let z=z0;z<=z1;z+=1.6) add(new THREE.CylinderGeometry(.06,.06,1.5,8),postM,x,GY+.75,z,null,true);
-      [.35,.8,1.25].forEach(y=>{ const r=add(new THREE.CylinderGeometry(.025,.025,z1-z0,8),bambooM,x,GY+y,(z0+z1)/2,null,true); r.rotation.x=Math.PI/2; });
+      for(let z=z0;z<=z1;z+=1.6) add(new THREE.CylinderGeometry(.06,.06,1.5,8),postM,x,GY+.75,z,fenceG,true);
+      [.35,.8,1.25].forEach(y=>{ const r=add(new THREE.CylinderGeometry(.025,.025,z1-z0,8),bambooM,x,GY+y,(z0+z1)/2,fenceG,true); r.rotation.x=Math.PI/2; });
       const vg=new THREE.CylinderGeometry(.022,.022,1.45,6), n=Math.round((z1-z0)/.4), vi=new THREE.InstancedMesh(vg,bambooM,n), m4=new THREE.Matrix4();
-      for(let i=0;i<n;i++){ m4.makeTranslation(x+(i%2?.04:-.04),GY+.72,z0+i*.4+.2); vi.setMatrixAt(i,m4); } vi.castShadow=true; G.add(vi); });
+      for(let i=0;i<n;i++){ m4.makeTranslation(x+(i%2?.04:-.04),GY+.72,z0+i*.4+.2); vi.setMatrixAt(i,m4); } vi.castShadow=true; fenceG.add(vi); });
     // 石灯籠
     const stone=M(0x8d8a82,{roughness:.95}), lanterns=[];
     function toro(x,z){ const l=new THREE.Group(); l.position.set(x,GY,z); G.add(l);
@@ -1144,7 +1160,8 @@ function initThree(){
       for(let i=0;i<32;i++){ const a=i/32*Math.PI*2; [-.1,.1].forEach(zz=>mesh(new THREE.SphereGeometry(.014,6,4),gold,Math.cos(a)*.45,Math.sin(a)*.45,zz,fr)); }
       [[0,.6],[.6,0],[-.6,0]].forEach(([a,b])=>{ const c=limb(fr,gold,.01); setLimb(c,V(a*.75,b*.75,0),V(a,b,0)); });
       const face=mesh(new THREE.CircleGeometry(.42,48),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7,emissive:0x000000}),0,0,-.112,fr); face.rotation.y=Math.PI;
-      mesh(new THREE.CircleGeometry(.42,48),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7}),0,0,.112,fr);
+      const back=mesh(new THREE.CircleGeometry(.42,48),new THREE.MeshStandardMaterial({map:tomoeTex(),roughness:.7}),0,0,.112,fr);
+      photo('assets/taiko.jpg',null,t=>{ [face,back].forEach(m=>{ m.material.map=t; m.material.needsUpdate=true; }); });
       mesh(new THREE.BoxGeometry(.08,.62,.08),lac,0,-.68,0,fr); mesh(new THREE.BoxGeometry(.9,.08,.44),lac,0,-.76,0,fr);
       mesh(new THREE.BoxGeometry(.92,.02,.46),lacRed,0,-.715,0,fr);
       P.hold.L.set(.2,.62,.3); P.hold.R.set(-.2,.62,.3); P.strike={L:V(.12,.74,.55),R:V(-.1,.84,.55)}; P.face=face;
