@@ -88,6 +88,25 @@ header .sp{flex:1}
 .jb-judge.show{opacity:1;transform:translate(-50%,0)} .jb-judge.good{color:var(--g)} .jb-judge.ok{color:var(--kin)} .jb-judge.bad{color:var(--muted)}
 .jb-x{position:absolute;top:-10px;right:-6px;width:28px;height:28px;border-radius:50%;background:var(--surface);border:1px solid var(--line);font-size:16px;line-height:1;box-shadow:var(--shadow)}
 .stagebox.joining .caption{bottom:118px}
+/* 授業モード：舞台の下に、順番に読む説明の札 */
+.lesson{position:absolute;left:10px;right:10px;bottom:10px;padding:12px 14px 10px;border-radius:18px;background:color-mix(in oklab,var(--surface) 92%,transparent);
+  border:1px solid color-mix(in oklab,var(--kin) 55%,var(--line));box-shadow:var(--shadow);backdrop-filter:blur(6px);display:grid;gap:8px}
+.lesson[hidden]{display:none}
+.ls-top{display:flex;align-items:baseline;gap:10px}
+.ls-step{font-size:11.5px;color:var(--kin);font-weight:700;letter-spacing:.06em;white-space:nowrap}
+.ls-title{font-family:var(--f-display);font-weight:800;font-size:17px;line-height:1.2;flex:1;min-width:0}
+.ls-text{font-size:13.5px;line-height:1.75;margin:0;max-height:7.2em;overflow:auto}
+.ls-try{font-size:12.5px;color:var(--kin);margin:0;padding-left:1.4em;text-indent:-1.4em} .ls-try:before{content:'👉 '}
+.ls-nav{display:flex;align-items:center;gap:8px}
+.ls-nav .dots{flex:1;display:flex;gap:4px;justify-content:center;flex-wrap:wrap} .ls-nav .dots i{width:6px;height:6px;border-radius:50%;background:var(--line)} .ls-nav .dots i.on{background:var(--kin)} .ls-nav .dots i.done{background:color-mix(in oklab,var(--kin) 45%,var(--line))}
+.ls-btn{height:36px;padding:0 16px;border-radius:18px;background:var(--ink);color:var(--bg);font-size:13.5px;font-weight:600} .ls-btn[disabled]{opacity:.35}
+.ls-btn.alt{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.ls-x{position:absolute;top:-10px;right:-6px;width:28px;height:28px;border-radius:50%;background:var(--surface);border:1px solid var(--line);font-size:16px;line-height:1;box-shadow:var(--shadow)}
+.stagebox.lessoning .caption{display:none}
+.lesson-start{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:color-mix(in oklab,var(--kin) 12%,var(--surface));border:1px solid color-mix(in oklab,var(--kin) 50%,var(--line))}
+.lesson-start b{font-family:var(--f-display);font-size:15px} .lesson-start small{display:block;color:var(--muted);font-size:12px;margin-top:2px} .lesson-start .act{margin-left:auto;flex:none}
+@media (max-width:620px){ .lesson{padding:10px 12px 8px} .ls-text{font-size:13px;max-height:none} .ls-title{font-size:15.5px} .ls-btn{height:34px;padding:0 13px} }
+.lesson.below{position:relative;left:auto;right:auto;bottom:auto;margin-top:10px} /* 画面が狭いときは舞台の下に置く */
 .zoom{display:grid;gap:8px}
 .zstage{position:relative;height:clamp(240px,42vh,360px);border-radius:16px;overflow:hidden;background:radial-gradient(120% 90% at 50% 15%,var(--sky1),var(--sky2));border:1px solid var(--line);touch-action:none}
 .zcv{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -246,6 +265,12 @@ input[type=range]{width:100%;accent-color:var(--kin)}
       <canvas id="lane" aria-label="流れてくる印"></canvas>
       <div class="jb-hit"><div class="jb-judge" id="jbJudge"></div><button class="hit" id="hitBtn">打つ</button></div>
       <button class="jb-x" id="jbX" aria-label="参加をやめる">×</button>
+    </div>
+    <div class="lesson" id="lesson" hidden role="region" aria-label="授業モード">
+      <div class="ls-top"><span class="ls-step" id="lsStep"></span><div class="ls-title" id="lsTitle"></div></div>
+      <p class="ls-text" id="lsText"></p><p class="ls-try" id="lsTry" hidden></p>
+      <div class="ls-nav"><button class="ls-btn alt" id="lsPrev">‹ 前へ</button><div class="dots" id="lsDots"></div><button class="ls-btn" id="lsNext">次へ ›</button></div>
+      <button class="ls-x" id="lsX" aria-label="授業モードをやめる">×</button>
     </div>
     <div class="viewbtns"><button data-v="front" class="on">正面</button><button data-v="top">真上</button><button data-v="side">横</button></div>
   </section>
@@ -1557,6 +1582,53 @@ const LEARN = [
     a:[['ゆらぎあり',()=>{state.yuragi=true;savePref();only(Object.keys(INST));start(SEC_BEATS);}],['ゆらぎなし',()=>{state.yuragi=false;savePref();only(Object.keys(INST));start(SEC_BEATS);}]]},
 ];
 function playWith(list,from=0){ only(list); start(from); dlg.close(); }
+// 授業モード：順番に読むと雅楽のしくみがわかる。各ステップで、鳴らす楽器・始める拍・見る向きを自動で切りかえる
+const ALL=()=>Object.keys(INST);
+const LESSON = [
+  {t:'雅楽と越天楽', x:'雅楽は、1000年以上も宮中で受けつがれてきた音楽と舞です。越天楽（えてんらく）は、中国から伝わった「唐楽」の曲で、いちばんよく知られています。まず全員の演奏を聴いてみましょう。',
+    y:'音を出している奏者の足もとが光ります。', g:ALL, b:SEC_BEATS, v:'front'},
+  {t:'16人・3つの列', x:'管絃（かんげん）は「三管・両絃・三鼓」。笛が3人ずつ、弦が2人ずつ、打楽器が1人ずつの16人です。前から打物（うちもの）・弾物（ひきもの）・吹物（ふきもの）の順に座ります。後ろの人から前の人の手が見えるので、指揮者がいなくても合わせられます。',
+    y:'真上から見ています。色で3つのグループが分かります。', g:ALL, b:SEC_BEATS, v:'top'},
+  {t:'打物①　太鼓が節目をつくる', x:'まず打楽器だけを聴きます。太鼓は左手で小さく「図（ずん）」、2拍あとに右手で大きく「百（どう）」。百のときは鞨鼓（かっこ）と鉦鼓（しょうこ）も同時に打ち、いちばん大きな節目になります。',
+    y:'左下の輪で、図と百の場所を見ながら聴いてみましょう。', g:()=>['kakko','taiko','shoko'], b:SEC_BEATS, v:'front'},
+  {t:'打物②　早四拍子', x:'越天楽の拍子は「早四拍子（はやよひょうし）」。4拍のまとまり（小拍子）を4つで太鼓がひとめぐりします。鞨鼓の「片来（かたらい）」は、だんだん速くなる連打で、百に向かって合奏を導きます。',
+    y:'輪が一周するあいだに、百は一回だけです。', g:()=>['kakko','taiko','shoko'], b:SEC_BEATS, v:'front'},
+  {t:'篳篥　旋律の中心', x:'次は篳篥（ひちりき）だけ。小さな縦笛ですが、とても大きな音が出ます。この楽器が旋律の中心です。音を下からすくい上げる「塩梅（えんばい）」という吹き方が、雅楽らしい響きを作ります。',
+    y:'旋律だけを口ずさんでみましょう。', g:()=>['hichiriki'], b:SEC_BEATS, v:'front'},
+  {t:'龍笛　旋律をかざる', x:'龍笛（りゅうてき）を加えます。篳篥と同じ旋律を、高い音で、細かい飾りをつけながら追いかけます。同じ楽器の3人も少しずつずれて、独特の厚みが生まれます。',
+    y:'篳篥だけのときとの違いを聴きくらべてください。', g:()=>['hichiriki','ryuteki'], b:SEC_BEATS, v:'front'},
+  {t:'笙　和音でつつむ', x:'笙（しょう）は17本の竹を束ねた楽器で、5〜6音の和音「合竹（あいたけ）」を同時に鳴らします。旋律の音が変わると、指を一本ずつ移して次の和音へ（手移り）。だから響きが途切れません。',
+    y:'楽器名の「i」を押すと、笙を拡大して見られます。', g:()=>['sho','hichiriki'], b:SEC_BEATS, v:'front'},
+  {t:'琵琶と箏　拍を刻む', x:'弦楽器は旋律を弾くのではなく、拍の区切りを示します。琵琶（びわ）はジャラン、箏（こと）はシャラシャラと、決まった型を弾きます。',
+    y:'弦だけで、小拍子の区切りが聞こえますか。', g:()=>['biwa','koto'], b:SEC_BEATS, v:'front'},
+  {t:'曲の形　A A B B C C A A B', x:'越天楽は3つの旋律 A・B・C を二回ずつ、最後にもう一度 A・A・B を演奏して終わります。AとBは同じ終わり方（終止句）で結ばれます。',
+    y:'下の A・B・C の文字が、いまどこかを示しています。', g:ALL, b:SEC_BEATS*2, v:'front'},
+  {t:'始まり方　音頭と付所', x:'曲は、龍笛の首席がひとりで吹き出す「音頭（おんど）」から始まります。決まった場所（付所）で打物、笙・篳篥の首席が入り、残りの奏者、琵琶と箏が順に加わります。',
+    y:'まだ入っていない奏者は、楽器を膝に下ろしています。', g:ALL, b:0, v:'front', ondo:true},
+  {t:'拍はゆれる・加拍子', x:'雅楽の拍は、息に合わせて少し伸び縮みします。曲の後半からは太鼓の回数が倍になる「加拍子（かびょうし）」に変わり、少し速く、引きしまった雰囲気になります。',
+    y:'輪の上の図・百が倍にふえるところを見てください。', g:ALL, b:176, v:'front'},
+  {t:'終わり方　留手', x:'最後は笛と笙が吹きおさめ、琵琶と箏だけで曲を結びます。これを「留手（とめで）」といいます。',
+    y:'管が止まったあとの、弦だけの余韻を聴きましょう。', g:ALL, b:PIECE-16, v:'front'},
+  {t:'まとめ', x:'吹物が旋律と和音、弾物が拍の区切り、打物が節目。この3つの役割が重なって、ゆったりとした越天楽ができています。今度は自分で楽器を休ませたり、「参加」で演奏に加わってみましょう。',
+    y:'舞台の奏者をタップすると、その楽器を休ませられます。', g:ALL, b:SEC_BEATS, v:'front'},
+];
+let lesson=null; // {i}
+function lessonOpen(){ if(me) joinEnd(); switchSong('etenraku'); dlg.close(); lesson={i:0,ondo:state.ondo}; const ls=$('#lesson'); ls.hidden=false; $('#stagebox').classList.add('lessoning');
+  if(matchMedia('(max-width:620px)').matches){ ls.classList.add('below'); $('#stagebox').after(ls); }
+  $('#lsDots').innerHTML=LESSON.map(()=>'<i></i>').join(''); lessonShow(0); }
+function lessonShow(i){ if(!lesson) return; lesson.i=i; const L=LESSON[i];
+  $('#lsStep').textContent=`${i+1} / ${LESSON.length}`; $('#lsTitle').textContent=L.t; $('#lsText').textContent=L.x; $('#lsText').scrollTop=0;
+  const ty=$('#lsTry'); ty.hidden=!L.y; ty.textContent=L.y||'';
+  $('#lsDots').querySelectorAll('i').forEach((d,k)=>{ d.classList.toggle('on',k===i); d.classList.toggle('done',k<i); });
+  $('#lsPrev').disabled=i===0; $('#lsNext').textContent=i===LESSON.length-1?'おわる':'次へ ›';
+  if(L.ondo) state.ondo=true; // 音頭から始める回だけ（設定は授業が終わるともどす）
+  only(L.g()); const vb=document.querySelector(`.viewbtns button[data-v="${L.v}"]`); if(vb) vb.click();
+  start(L.b); }
+function lessonClose(){ if(!lesson) return; state.ondo=lesson.ondo; lesson=null; const ls=$('#lesson'); ls.hidden=true; if(ls.classList.contains('below')){ ls.classList.remove('below'); $('#stagebox').appendChild(ls); } $('#stagebox').classList.remove('lessoning'); stop(); only(ALL()); }
+$('#lsNext').onclick=()=>{ if(!lesson) return; if(lesson.i>=LESSON.length-1) lessonClose(); else lessonShow(lesson.i+1); };
+$('#lsPrev').onclick=()=>{ if(lesson && lesson.i>0) lessonShow(lesson.i-1); };
+$('#lsX').onclick=lessonClose;
+addEventListener('keydown',e=>{ if(!lesson || dlg.open || e.repeat) return; if(e.key==='ArrowRight'){ e.preventDefault(); $('#lsNext').click(); } else if(e.key==='ArrowLeft'){ e.preventDefault(); $('#lsPrev').click(); } });
 const NUM=['一','二','三','四','五','六','七'];
 // 雅楽の用語集（「しくみ」の中の「用語集」タブ）。出典：文化デジタルライブラリー「雅楽」、コトバンク「舞楽」「舞楽装束」、Wikipedia「国風歌舞」ほか
 const GLOSS = [
@@ -1613,10 +1685,10 @@ function glossHTML(q){ q=(q||'').trim(); const cats=[...new Set(GLOSS.map(x=>x.c
 $('#learnBtn').onclick=()=>{
   openSheet(`${top('雅楽のしくみ','ががく')}<div class="tabs" role="tablist"><button role="tab" data-t="learn" class="on" aria-selected="true">しくみ</button><button role="tab" data-t="words" aria-selected="false">用語集</button></div>
   <div class="pane" data-p="words" hidden><input class="gsearch" type="search" placeholder="ことばをさがす（例：舞楽、りょうおう）" aria-label="用語をさがす"><div class="glist">${glossHTML()}</div></div>
-  <div class="pane learn" data-p="learn">${LEARN.map((l,i)=>`<div class="card"><button class="h" aria-expanded="false"><span class="n">${NUM[i]}</span><span class="q">${l.q}</span><span class="chev">›</span></button><div class="b"><p>${l.p}</p><div class="acts">${l.a.map((a,j)=>`<button class="act" data-i="${i}" data-j="${j}">${PLAYI}${a[0]}</button>`).join('')}</div></div></div>`).join('')}</div>`);
+  <div class="pane learn" data-p="learn"><div class="lesson-start"><div><b>授業モード</b><small>${LESSON.length}のステップを順番に。聴きながら、しくみがわかります</small></div><button class="act" id="lessonGo">${PLAYI}はじめる</button></div>${LEARN.map((l,i)=>`<div class="card"><button class="h" aria-expanded="false"><span class="n">${NUM[i]}</span><span class="q">${l.q}</span><span class="chev">›</span></button><div class="b"><p>${l.p}</p><div class="acts">${l.a.map((a,j)=>`<button class="act" data-i="${i}" data-j="${j}">${PLAYI}${a[0]}</button>`).join('')}</div></div></div>`).join('')}</div>`);
   body.querySelectorAll('.card .h').forEach(h=>h.onclick=()=>{ const c=h.parentElement, o=!c.classList.contains('open'); c.classList.toggle('open',o); h.setAttribute('aria-expanded',o); });
   body.querySelectorAll('.act').forEach(b=>b.onclick=()=>{ switchSong('etenraku'); LEARN[+b.dataset.i].a[+b.dataset.j][1](); dlg.close(); });
-  body.querySelector('.card').classList.add('open');
+  body.querySelector('.card').classList.add('open'); body.querySelector('#lessonGo').onclick=lessonOpen;
   body.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ body.querySelectorAll('.tabs button').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',x===b); });
     body.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.p!==b.dataset.t); });
   const gs=body.querySelector('.gsearch'); gs.oninput=()=>{ body.querySelector('.glist').innerHTML=glossHTML(gs.value); };
@@ -1681,6 +1753,7 @@ function joinOpen(){
   body.querySelectorAll('.jc').forEach(b=>b.onclick=()=>{ dlg.close(); joinStart(b.dataset.id); });
 }
 function joinStart(id){
+  if(lesson) lessonClose();
   initAudio(); if(ctx.state==='suspended') ctx.resume();
   me={id,cues:buildCues(id),held:false,sc:{good:0,ok:0,miss:0}};
   Object.keys(INST).forEach(k=>toggle(k,true));
